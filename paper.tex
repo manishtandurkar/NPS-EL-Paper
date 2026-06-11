@@ -227,37 +227,37 @@ thread. In the CLI client, the receive thread writes directly to standard output
 
 Table~\ref{tab:modules} summarises the principal source modules and their roles.
 
-\begin{table}[htbp]
+\begin{table*}[t]
 \caption{System Module Map}
 \label{tab:modules}
 \begin{center}
-\begin{tabular}{|l|p{4.2cm}|}
+\begin{tabular}{|l|p{10cm}|}
 \hline
 \textbf{Module} & \textbf{Role} \\
 \hline
 \texttt{server.c}, \texttt{client\_handler.c} & Accept loop, per-client thread, message routing \\
 \hline
-\texttt{room\_manager.c}, \texttt{auth\_manager.c} & User-list broadcast, RSA verification \\
+\texttt{room\_manager.c}, \texttt{auth\_manager.c} & User-list broadcast, RSA-2048 public-key verification \\
 \hline
-\texttt{gtk\_client.c} & GTK3 login dialog, chat window, user panel \\
+\texttt{gtk\_client.c} & GTK3 login dialog, chat window, directed messaging, priority selector, online-users panel \\
 \hline
-\texttt{client.c}, \texttt{input\_handler.c} & CLI client, command parsing \\
+\texttt{client.c}, \texttt{input\_handler.c}, \texttt{display.c} & CLI client, \texttt{@recipient}/\texttt{@all} command parsing, terminal output \\
 \hline
-\texttt{ratchet.c}, \texttt{aes\_utils.c}, \texttt{rsa\_utils.c} & Double Ratchet, AES-256-CBC, RSA-2048, HKDF \\
+\texttt{ratchet.c}, \texttt{aes\_utils.c}, \texttt{rsa\_utils.c}, \texttt{crypto\_common.c} & Double Ratchet state machine, AES-256-CBC encrypt/decrypt, RSA-2048 sign/verify, HKDF \\
 \hline
-\texttt{tls\_server.c}, \texttt{tls\_client.c} & TLS 1.3 wrap / unwrap \\
+\texttt{tls\_server.c}, \texttt{tls\_client.c} & TLS 1.3 context setup, wrap/unwrap for all TCP I/O \\
 \hline
-\texttt{adaptive\_engine.c}, \texttt{metrics\_collector.c} & State machine, rolling metrics \\
+\texttt{adaptive\_engine.c}, \texttt{metrics\_collector.c} & Three-state engine, 1-second evaluation tick, rolling metrics aggregation \\
 \hline
-\texttt{multipath.c}, \texttt{offline\_queue.c}, \texttt{priority\_queue.c} & Dual-path send, offline storage, priority queue \\
+\texttt{multipath.c}, \texttt{offline\_queue.c}, \texttt{priority\_queue.c} & Dual-path TCP+UDP send loop, disk-based offline queue, three-level priority queue \\
 \hline
-\texttt{intrusion.c} & Per-IP counters, block logic, replay detection \\
+\texttt{intrusion.c} & Per-IP authentication failure counters, IP block/unblock, replay event recording \\
 \hline
-\texttt{socket\_utils.c}, \texttt{udp\_notify.c} & Socket helpers, UDP receiver \\
+\texttt{socket\_utils.c}, \texttt{dns\_resolver.c}, \texttt{udp\_notify.c} & Socket helpers, DNS resolution, UDP receiver thread \\
 \hline
 \end{tabular}
 \end{center}
-\end{table}
+\end{table*}
 
 % ============================================================
 %  SECTION IV — WIRE PROTOCOL AND CONNECTION LIFECYCLE  (Member 2)
