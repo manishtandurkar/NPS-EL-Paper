@@ -229,78 +229,75 @@ thread. In the CLI client, the receive thread writes directly to standard output
 
 Fig.~\ref{fig:arch} illustrates the two-tier system and the principal data flows.
 
-\begin{figure*}[t]
+\begin{figure}[t]
 \centering
+\resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[
-    box/.style={draw, rounded corners=3pt, minimum width=3.0cm, minimum height=0.55cm,
-                align=center, font=\small, fill=#1},
-    box/.default=gray!8,
-    grp/.style={draw, thick, rounded corners=8pt, inner sep=9pt},
+    box/.style={draw, rounded corners=2pt, minimum width=2.4cm,
+                minimum height=0.50cm, align=center, font=\small, fill=white},
+    grp/.style={draw, thick, rounded corners=5pt, inner sep=7pt, fill=gray!8},
     ar/.style={-{Stealth[length=5pt,width=4pt]}, semithick},
     dar/.style={-{Stealth[length=5pt,width=4pt]}, semithick, dashed},
-    lbl/.style={font=\scriptsize\itshape}
+    lbl/.style={font=\scriptsize}
 ]
 
-%--- CLIENT (left) ---
-\node[box=blue!15]  (send) at (0,  1.2) {Send Thread};
-\node[box=blue!15]  (pq)   at (0,  0.4) {Priority Queue};
-\node[box=blue!15]  (recv) at (0, -0.4) {Recv Thread};
-\node[box=blue!15]  (dd)   at (0, -1.2) {Dedup Ring Buffer};
+% CLIENT
+\node[box] (send) at (0,  1.2) {Send Thread};
+\node[box] (pq)   at (0,  0.4) {Priority Queue};
+\node[box] (recv) at (0, -0.4) {Recv Thread};
+\node[box] (dd)   at (0, -1.2) {Dedup Buffer};
 
 \begin{scope}[on background layer]
-  \node[grp, fill=blue!5, draw=blue!40, fit=(send)(pq)(recv)(dd)] (cbox) {};
+  \node[grp, fit=(send)(pq)(recv)(dd)] (cbox) {};
 \end{scope}
-\node[font=\small\bfseries, above=5pt of cbox] {Client Process (GTK / CLI)};
+\node[font=\small\bfseries, above=4pt of cbox] {Client (GTK / CLI)};
 
-%--- SERVER (right) ---
-\node[box=green!20]  (acc)  at (9.5,  2.4) {accept() Loop};
-\node[box=green!20]  (hnd)  at (9.5,  1.6) {handle\_client $\times N$};
-\node[box=green!20]  (ct)   at (9.5,  0.8) {Client Table};
-\node[box=orange!30] (eng)  at (9.5,  0.0) {Adaptive Engine};
-\node[box=red!15]    (ids)  at (9.5, -0.8) {IDS / Metrics};
-\node[box=teal!20]   (udpr) at (9.5, -1.6) {UDP Receiver};
+% SERVER
+\node[box] (acc)  at (6.0,  2.2) {accept()};
+\node[box] (hnd)  at (6.0,  1.4) {handle\_client $\times N$};
+\node[box] (ct)   at (6.0,  0.6) {Client Table};
+\node[box] (eng)  at (6.0, -0.2) {Adaptive Engine};
+\node[box] (ids)  at (6.0, -1.0) {IDS};
+\node[box] (udpr) at (6.0, -1.8) {UDP Receiver};
 
 \begin{scope}[on background layer]
-  \node[grp, fill=green!5, draw=green!50,
-        fit=(acc)(hnd)(ct)(eng)(ids)(udpr)] (sbox) {};
+  \node[grp, fit=(acc)(hnd)(ct)(eng)(ids)(udpr)] (sbox) {};
 \end{scope}
-\node[font=\small\bfseries, above=5pt of sbox] {Server Process};
+\node[font=\small\bfseries, above=4pt of sbox] {Server Process};
 
-%--- NETWORK CONNECTIONS ---
-\draw[ar, blue!65]
-    (send.east) to[out=10, in=170]
-    node[above, lbl] {TCP / TLS\,1.3 \quad (port 8080)}
+% TCP: send -> accept
+\draw[ar] (send.east) to[out=10, in=170]
+    node[above, lbl] {TCP / TLS 1.3}
     (acc.west);
 
-\draw[ar, blue!65]
-    (hnd.west) to[out=190, in=350]
+% TCP: handler -> recv
+\draw[ar] (hnd.west) to[out=190, in=350]
     (recv.east);
 
-\draw[dar, gray!60]
-    (send.east) to[out=-20, in=170]
-    node[below=2pt, lbl] {UDP \quad (port 8081)}
+% UDP backup
+\draw[dar] (send.east) to[out=-15, in=170]
+    node[below=1pt, lbl] {UDP}
     (udpr.west);
 
-%--- CLIENT INTERNAL ---
+% CLIENT INTERNAL
 \draw[ar] (pq.north)  -- (send.south);
 \draw[ar] (recv.south) -- (dd.north);
 
-%--- SERVER INTERNAL ---
+% SERVER INTERNAL
 \draw[ar] (acc.south) -- (hnd.north);
 \draw[ar] (hnd.south) -- (ct.north);
 \draw[ar] (ids.north) -- node[right=1pt, lbl] {metrics} (eng.south);
-\draw[ar] (eng.east)  -- ++(0.7,0) --
-          node[right=2pt, lbl] {EngineState}
+\draw[ar] (eng.east)  -- ++(0.6,0) --
+          node[right=1pt, lbl] {state}
           ++(0,1.6) -- (hnd.east);
 
-\end{tikzpicture}
-\caption{Two-tier system architecture. The client transmits each message over
-TCP/TLS\,1.3 (primary, solid) and UDP (backup, dashed) simultaneously. The adaptive
-engine reads IDS-fed metrics every second and propagates \texttt{EngineState} to all
-active \texttt{handle\_client} threads. The return TCP path (server to client) is shown
-arriving at the Recv Thread.}
+\end{tikzpicture}%
+}
+\caption{System architecture. Solid arrows denote TCP/TLS\,1.3 paths; dashed arrow
+denotes the UDP backup path. The adaptive engine propagates its state to all
+\texttt{handle\_client} threads based on IDS-fed metrics.}
 \label{fig:arch}
-\end{figure*}
+\end{figure}
 
 \subsection{Module Overview}
 
