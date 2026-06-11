@@ -1,0 +1,314 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{Adaptive Secure Communication System for Unreliable and Adversarial Networks}
+
+\author{
+\IEEEauthorblockN{1\textsuperscript{st} Given Name Surname}
+\IEEEauthorblockA{\textit{Department Name} \\
+\textit{Institution Name}\\
+City, Country \\
+email@institution.edu}
+\and
+\IEEEauthorblockN{2\textsuperscript{nd} Given Name Surname}
+\IEEEauthorblockA{\textit{Department Name} \\
+\textit{Institution Name}\\
+City, Country \\
+email@institution.edu}
+\and
+\IEEEauthorblockN{3\textsuperscript{rd} Given Name Surname}
+\IEEEauthorblockA{\textit{Department Name} \\
+\textit{Institution Name}\\
+City, Country \\
+email@institution.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+Secure messaging over unreliable and adversarial networks is undermined by static security
+configurations that cannot respond to changing threat conditions. We present an adaptive
+end-to-end encrypted chat system that combines TLS 1.3 transport security with a
+Signal-protocol Double Ratchet at the application layer, dual-path TCP and UDP delivery,
+and a three-state adaptive engine that automatically reconfigures cryptographic and
+transport parameters in response to live network metrics and detected security events.
+A lightweight per-IP intrusion detection system feeds authentication failures and replay
+detections directly into the engine state machine, triggering escalation from Normal to
+Unstable or High-Risk mode with immediate effect. In High-Risk mode, all payloads are
+padded to a constant 4096 bytes, DH ratchet steps occur on every message, and randomized
+retry delays frustrate traffic analysis. The system provides forward secrecy and
+break-in recovery per the Double Ratchet specification, multipath deduplication via a
+128-bit message-ID ring buffer, and persistent offline message delivery. Evaluation
+confirms correct state transitions under injected packet loss and authentication failure
+scenarios, with all 13 functional tests passing.
+\end{abstract}
+
+\begin{IEEEkeywords}
+end-to-end encryption, adaptive security, Double Ratchet, TLS 1.3, intrusion detection,
+multipath transport, forward secrecy, secure messaging
+\end{IEEEkeywords}
+
+% ============================================================
+%  SECTION I — INTRODUCTION  (Member 1)
+% ============================================================
+\section{Introduction}
+
+Secure communication over unreliable and adversarial networks remains an open challenge.
+Standard TLS protects the channel but cannot react to rising packet loss, replay attacks,
+or authentication brute-force attempts. This paper presents a multi-client end-to-end
+encrypted chat system written in C (C11, POSIX) that addresses this gap through
+an adaptive three-state security engine tightly coupled to both network quality metrics
+and a lightweight intrusion detection system.
+
+The main contributions of this work are:
+\begin{enumerate}
+    \item A three-state adaptive engine (Normal / Unstable / High-Risk) driven by live
+          packet loss, round-trip time, authentication failure count, and replay detection
+          count.
+    \item Signal Double Ratchet at the application layer, providing per-message forward
+          secrecy and break-in recovery independent of TLS.
+    \item Dual-path (TCP+UDP) multipath delivery with 128-bit message-ID deduplication.
+    \item A lightweight per-IP IDS that feeds security events directly into the adaptive
+          state machine.
+    \item Persistent offline message queue with chronological replay on reconnect.
+\end{enumerate}
+
+% ============================================================
+%  SECTION II — RELATED WORK  (Member 1)
+% ============================================================
+\section{Related Work}
+
+The Signal Double Ratchet Algorithm~\cite{b1} provides per-message forward secrecy and
+break-in recovery through a combination of symmetric-key ratcheting and Diffie--Hellman
+ratcheting. Formal security analysis of the Signal protocol was conducted by
+Cohn-Gordon et al.~\cite{b2}. TLS 1.3~\cite{b3} secures the transport channel with
+authenticated encryption and perfect forward secrecy at the session level. HKDF~\cite{b4}
+provides the key derivation foundation used throughout our cryptographic stack.
+Group messaging security is addressed by the Messaging Layer Security (MLS)
+protocol~\cite{b5}, which we identify as a direction for future work.
+
+% ============================================================
+%  SECTION III — SYSTEM ARCHITECTURE  (Member 1)
+% ============================================================
+\section{System Architecture}
+
+The system follows a two-tier client-server architecture. The server is a single POSIX
+process that spawns a detached \texttt{pthread} per accepted client connection. A shared
+client table (\texttt{ClientEntry[50]}) is protected by a \texttt{pthread\_mutex\_t}.
+Two background threads run independently: an adaptive engine thread (1-second evaluation
+tick) and a UDP receiver thread.
+
+Each client runs two threads: a send thread that drains a priority queue, encrypts
+messages, and transmits over both TCP and UDP; and a receive thread that deduplicates,
+decrypts, and delivers messages to the UI layer.
+
+% ============================================================
+%  SECTION IV — WIRE PROTOCOL AND CONNECTION LIFECYCLE  (Member 2)
+% ============================================================
+\section{Wire Protocol and Connection Lifecycle}
+
+Every message uses a uniform 28-byte binary header:
+
+\begin{equation}
+\underbrace{\texttt{ver}(1)}_{}\ |\ \underbrace{\texttt{type}(1)}_{}\ |\ \underbrace{\texttt{pri}(1)}_{}\ |\ \underbrace{\texttt{flags}(1)}_{}\ |\ \underbrace{\texttt{msg\_id}(16)}_{}\ |\ \underbrace{\texttt{len}(4)}_{}\ |\ \underbrace{\texttt{crc32}(4)}_{}
+\end{equation}
+
+The 128-bit \texttt{msg\_id} is used for deduplication across TCP and UDP paths.
+All \texttt{MSG\_CHAT} payloads are padded to a constant 4112 bytes
+(16-byte IV + 4096-byte AES ciphertext) to resist traffic analysis.
+
+% ============================================================
+%  SECTION V — CRYPTOGRAPHIC DESIGN  (Member 2)
+% ============================================================
+\section{Cryptographic Design}
+
+\subsection{Cryptographic Stack}
+
+The system employs a four-layer cryptographic stack:
+
+\begin{enumerate}
+    \item \textbf{Key Agreement} --- X25519 ECDH (\texttt{MSG\_DH\_INIT} /
+          \texttt{MSG\_DH\_RESP}). The shared secret is expanded via HKDF~\cite{b4}
+          to produce initial ratchet keys.
+    \item \textbf{Identity Authentication} --- RSA-2048 signatures over the username
+          bytes. The server stores the public key on first login and verifies it on
+          subsequent logins.
+    \item \textbf{Transport Confidentiality} --- TLS 1.3~\cite{b3} with TLS 1.2
+          and below disabled.
+    \item \textbf{E2EE Confidentiality} --- AES-256-CBC with per-message keys derived
+          from the Double Ratchet chain. Operates inside TLS so that TLS compromise
+          does not expose message content.
+\end{enumerate}
+
+\subsection{Double Ratchet Protocol}
+
+The Double Ratchet~\cite{b1} maintains two interlocked ratchets. The symmetric ratchet
+advances on every message:
+\begin{align}
+    \textit{msg\_key}       &= \text{HMAC-SHA256}(\textit{chain\_key},\ \texttt{0x01}) \\
+    \textit{new\_chain\_key} &= \text{HMAC-SHA256}(\textit{chain\_key},\ \texttt{0x02})
+\end{align}
+Each message uses a unique derived key; the old chain key is discarded immediately.
+The DH ratchet injects fresh Diffie--Hellman entropy every \texttt{dh\_ratchet\_freq}
+messages, providing break-in recovery. In High-Risk mode this frequency is set to 1,
+meaning a new X25519 keypair is generated per message.
+
+All key material is erased with \texttt{OPENSSL\_cleanse()} immediately after use.
+
+% ============================================================
+%  SECTION VI — ADAPTIVE ENGINE AND IDS  (Member 3)
+% ============================================================
+\section{Adaptive Engine and Intrusion Detection}
+
+\subsection{Three-State Adaptive Engine}
+
+A background thread evaluates a \texttt{Metrics} structure every second and updates the
+shared engine state read by all modules. Three operating modes are defined:
+
+\begin{itemize}
+    \item \textbf{Normal} --- standard retries (3), 100\,ms retry delay, DH ratchet
+          every 10 messages.
+    \item \textbf{Unstable} --- increased retries (7), 200\,ms delay; triggered by
+          $\geq$5\% packet loss or $\geq$3 consecutive timeouts.
+    \item \textbf{High-Risk} --- maximum retries (10), 300\,ms base delay, forced
+          4096-byte padding, random 100--500\,ms delays, DH ratchet every message;
+          triggered immediately by $\geq$20\% packet loss, $\geq$5 auth failures, or
+          $\geq$3 replay detections.
+\end{itemize}
+
+Escalation is immediate. Downgrade to Normal requires 30 seconds of stable metrics
+(hysteresis to prevent state thrashing).
+
+\subsection{Intrusion Detection System}
+
+The IDS maintains a table of 256 per-IP records. After five authentication failures
+from the same IP, the address is blocked for 300 seconds and
+\texttt{metrics\_record\_auth\_fail()} is called, escalating the engine to High-Risk.
+Replay detections likewise call \texttt{metrics\_record\_replay()}. Blocked IPs are
+rejected before the TLS handshake completes.
+
+% ============================================================
+%  SECTION VII — MULTIPATH TRANSPORT AND OFFLINE QUEUE  (Member 3)
+% ============================================================
+\section{Multipath Transport and Offline Message Queue}
+
+\subsection{Dual-Path Delivery}
+
+Every outgoing message is transmitted over both the TLS/TCP primary path and a UDP
+backup path simultaneously. A 1024-slot deduplication ring buffer keyed on the 128-bit
+\texttt{msg\_id} discards duplicate deliveries silently. The ring buffer is
+\texttt{O(1024)} at typical chat rates and protected by a \texttt{pthread\_mutex\_t}.
+
+\subsection{Priority Queue}
+
+The client send thread drains a three-level priority queue: Normal, Urgent, and
+Critical. Critical messages wake the send thread immediately and receive two additional
+multipath retry attempts.
+
+\subsection{Offline Message Queue}
+
+Messages addressed to a disconnected recipient are stored on disk under
+\texttt{data/offline\_queue/<username>/} as one file per message, named by millisecond
+timestamp and message ID for lexicographic chronological ordering. Plaintext is stored
+(not ciphertext) because the recipient's future ratchet key is unknown at queue time;
+re-encryption occurs when the recipient reconnects. Queue capacity is 500 messages per
+user. Directories are mode \texttt{0700} and files \texttt{0600}; usernames are
+validated against \texttt{[a-zA-Z0-9\_-]} to prevent directory traversal.
+
+% ============================================================
+%  SECTION VIII — EVALUATION  (Member 3)
+% ============================================================
+\section{Evaluation}
+
+\subsection{Functional Correctness}
+
+All 13 functional tests pass. Key results are summarised below:
+
+\begin{itemize}
+    \item \textbf{Ratchet key uniqueness}: 100 derived message keys are all distinct.
+    \item \textbf{Forward secrecy}: deleting ratchet state at message 50 leaves all
+          prior messages unrecoverable.
+    \item \textbf{Break-in recovery}: exposing the chain key at message 50; messages
+          after the subsequent DH ratchet step are unreadable to an attacker holding
+          that chain key.
+    \item \textbf{Constant payload size}: all \texttt{MSG\_CHAT} frames are 4112 bytes
+          as confirmed via \texttt{tcpdump}.
+    \item \textbf{Multipath dedup}: the same \texttt{msg\_id} arriving via TCP and UDP
+          is processed exactly once.
+    \item \textbf{Engine transitions}: injecting 6\% packet loss triggers
+          Normal$\to$Unstable; 21\% triggers Unstable$\to$High-Risk; 5 auth failures
+          trigger immediate escalation to High-Risk from any state.
+    \item \textbf{Hysteresis}: 30 seconds of stable metrics after High-Risk produces
+          a return to Normal.
+    \item \textbf{IDS block}: 5 auth failures from one IP blocks it; TLS handshake
+          refused. Block lifted after 300 seconds.
+\end{itemize}
+
+% ============================================================
+%  SECTION IX — LIMITATIONS AND FUTURE WORK  (Member 2)
+% ============================================================
+\section{Limitations and Future Work}
+
+The current design has several acknowledged limitations. First, the server acts as a
+trusted re-encryption relay: each \texttt{MSG\_CHAT} is decrypted with the sender's
+ratchet and re-encrypted with the recipient's ratchet, so plaintext passes through
+server memory. Pure end-to-end encryption in the Signal sense would require X3DH
+pre-key exchange~\cite{b6} so the server never sees plaintext. Second, offline queued
+messages are stored as plaintext, exposing them in the event of a server breach.
+Third, TLS certificates are self-signed, suitable for lab evaluation but not
+production deployment. Fourth, RSA keypairs are stored as plain files rather than
+in hardware security modules. Fifth, broadcast messaging is implemented as a loop of
+per-client directed encryptions rather than a proper group ratchet such as
+MLS~\cite{b5}. Addressing these limitations, particularly adopting X3DH and MLS,
+constitutes planned future work.
+
+% ============================================================
+%  SECTION X — CONCLUSION  (Member 1)
+% ============================================================
+\section{Conclusion}
+
+This paper has presented an adaptive secure communication system that couples live
+network quality and security event metrics to cryptographic and transport configuration
+through a three-state engine. The system demonstrates that security posture need not
+be static: escalation to High-Risk mode automatically enables per-message DH ratchet
+steps, constant-size padding, and randomized retry delays in response to detected
+threats or network degradation. All functional correctness tests pass, including
+verification of forward secrecy, break-in recovery, constant payload size, and correct
+engine state transitions. Future work will address the server trust limitation via
+X3DH pre-key exchange and extend group messaging to a proper group ratchet.
+
+\section*{Acknowledgment}
+
+\begin{thebibliography}{00}
+\bibitem{b1} M. Marlinspike and T. Perrin, ``The Double Ratchet Algorithm,''
+    Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/doubleratchet/
+
+\bibitem{b2} K. Cohn-Gordon, C. Cremers, B. Dowling, L. Garratt, and D. Stebila,
+    ``A Formal Security Analysis of the Signal Messaging Protocol,''
+    in \textit{Proc. IEEE European Symposium on Security and Privacy (EuroS\&P)},
+    Paris, France, 2017, pp. 451--466.
+
+\bibitem{b3} E. Rescorla, ``The Transport Layer Security (TLS) Protocol Version 1.3,''
+    IETF RFC 8446, Aug. 2018.
+
+\bibitem{b4} H. Krawczyk and P. Eronen, ``HMAC-based Extract-and-Expand Key
+    Derivation Function (HKDF),'' IETF RFC 5869, May 2010.
+
+\bibitem{b5} R. Barnes, B. Beurdouche, R. Robert, J. Millican, E. Omara, and K. Cohn-Gordon,
+    ``The Messaging Layer Security (MLS) Protocol,''
+    IETF RFC 9420, Jul. 2023.
+
+\bibitem{b6} M. Marlinspike and T. Perrin, ``The X3DH Key Agreement Protocol,''
+    Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/x3dh/
+\end{thebibliography}
+
+\end{document}
