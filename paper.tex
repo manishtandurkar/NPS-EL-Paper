@@ -37,26 +37,11 @@ email@institution.edu}
 \maketitle
 
 \begin{abstract}
-Secure messaging over unreliable and adversarial networks is undermined by static security
-configurations that cannot respond to changing threat conditions. We present an adaptive
-end-to-end encrypted chat system that combines TLS 1.3 transport security with a
-Signal-protocol Double Ratchet at the application layer, dual-path TCP and UDP delivery,
-and a three-state adaptive engine that automatically reconfigures cryptographic and
-transport parameters in response to live network metrics and detected security events.
-A lightweight per-IP intrusion detection system feeds authentication failures and replay
-detections directly into the engine state machine, triggering escalation from Normal to
-Unstable or High-Risk mode with immediate effect. In High-Risk mode, all payloads are
-padded to a constant 4096 bytes, DH ratchet steps occur on every message, and randomized
-retry delays frustrate traffic analysis. The system provides forward secrecy and
-break-in recovery per the Double Ratchet specification, multipath deduplication via a
-128-bit message-ID ring buffer, and persistent offline message delivery. Evaluation
-confirms correct state transitions under injected packet loss and authentication failure
-scenarios, with all 13 functional tests passing.
+Static security configurations cannot adapt to evolving threat scenarios, which compromises secure messaging on networks that aren't reliable and trustworthy. We introduce an application layer Signal protocol Double Ratchet, transport layer TLS 1.3, and a three state adaptive engine, which can reconfigure application-layer cryptographic parameters and transport-layer parameters based on live network metrics, and any detected security events. A lightweight per IP intrusion detection system will report replay and authentication failures directly into the engine state machine, thus automatically switching to Unstable or High Risk mode. All payloads are padded to a fixed size of 4096 bytes, DH ratchet steps are used on every payload and randomized retry delays defeat traffic analysis in High Risk mode. It offers forward security and break in security recovery as per the Double Ratchet specification, multipath deduplication through 128 bit message ID ring buffer and persistent offline delivery of messages. All 13 functional tests pass for evaluation of correct state transitions for both injected packet loss and authentication failure conditions.
 \end{abstract}
 
 \begin{IEEEkeywords}
-end-to-end encryption, adaptive security, Double Ratchet, TLS 1.3, intrusion detection,
-multipath transport, forward secrecy, secure messaging
+end-to-end encryption, adaptive security, Double Ratchet, TLS 1.3, intrusion detection, multipath transport, forward secrecy, secure messaging
 \end{IEEEkeywords}
 
 % ============================================================
@@ -64,117 +49,43 @@ multipath transport, forward secrecy, secure messaging
 % ============================================================
 \section{Introduction}
 
-Over the past decade, secure messaging has become a foundational requirement across
-civilian, enterprise, and operational communication contexts alike. The cryptographic
-primitives underlying these systems have matured considerably: Transport Layer Security
-version~1.3~\cite{b3} provides authenticated encryption with forward secrecy at the
-session level, and application-layer protocols such as the Signal Double
-Ratchet~\cite{b1} extend those guarantees to the per-message level. What has received
-comparatively less attention is the relationship between a system's operating environment
-and its security posture. Most deployed systems apply a fixed cryptographic configuration
-chosen at design time, then rely on that configuration to hold regardless of what the
-network or the adversary actually does.
+In the last decade, secure messaging has been a mandatory feature in both civilian and enterprise, as well as operational, communication environments. A lot has happened in the cryptographic primitives of these systems: Transport Layer Security version~1.3~\cite{b3} adds authenticated encryption with forward secrecy at the session level, and application-layer protocols like the Signal Double Ratchet~\cite{b1} bring that at the per-message level. Less focus has been paid to the connection between the environment in which a system operates and their level of security. Most of the systems that are deployed use a fixed cryptographic configuration that are designed at the system design time and then assumed to remain as designed, regardless of what the network or the adversary does.
 
-This assumption breaks in practice. A link experiencing 20\% packet loss calls for
-different retry behavior than one that is healthy; a session under active authentication
-brute-force warrants tighter key rotation and IP-level blocking that a session seeing
-no failures does not. Static configurations cannot express this distinction. The result
-is either a posture that is permanently tuned for the worst case—accepting unnecessary
-overhead under benign conditions—or one tuned for the common case, leaving the system
-underdefended when conditions deteriorate.
+This assumption is violated in reality. A link that is in 20\% packet loss should have a different retry behaviour than a healthy link, a session that is denied a packet by an active authentication brute force should have tighter key rotation, and a denial of a packet at this layer means blocking at IP level, etc. This distinction can't be captured in a static configuration. The outcome is a permanently posture-d for worst case with extra overhead in normal cases or a permanently posture-d for common case with underdefending in bad ones.
 
-This paper describes a multi-client end-to-end encrypted chat system, implemented in
-C~(C11, POSIX), that treats security posture as a runtime variable. The system combines
-TLS~1.3 transport encryption with a Signal-style Double Ratchet at the application
-layer, simultaneous dual-path delivery over TCP and UDP, and a three-state adaptive
-engine whose inputs are drawn from both network quality measurements and a co-resident
-per-IP intrusion detection system~(IDS). When the engine determines that conditions have
-degraded—through rising packet loss, detected replay attempts, or a concentration of
-authentication failures from a single address—it escalates its operating mode and
-immediately reconfigures cryptographic and transport parameters across all active
-sessions. Recovery to the baseline mode is intentionally hysteretic, requiring thirty
-consecutive seconds of stable metrics before downgrading, to avoid oscillatory behavior
-under borderline conditions.
+This paper introduces a multi-client end-to-end encrypted chat system realized in C~(C11, POSIX), in which the security posture is considered as a runtime variable. It includes a TLS~1.3 transport encryption, a Signal-style Double Ratchet at the application layer, simultaneous dual-path delivery across TCP and UDP, and a three-state adaptive engine that's fed by both the network quality metrics and a co-resident per-IP intrusion detection system~(IDS). If the engine senses that the quality is deteriorating (due to increased packet loss, replay detection, or increasing number of authentication failures from a single address), it will increase its mode of operation and immediately reconfigure cryptographic and transport parameters for each active session. The recovery to the baseline mode is hysteretic, meaning that the metrics have to be stable for a minimum of 30 seconds, to prevent oscillatory behavior at the borderline.
 
-The main contributions of this work are as follows:
+The main contribution of this work are as follows:
 \begin{enumerate}
-    \item A three-state adaptive engine (Normal, Unstable, High-Risk) driven by a
-          rolling packet loss rate, smoothed round-trip time, per-session authentication
-          failure count, and cumulative replay detection count.
-    \item Integration of the Signal Double Ratchet at the application layer, providing
-          per-message forward secrecy and break-in recovery independently of the
-          underlying TLS session state.
-    \item Simultaneous dual-path delivery over TCP and UDP with deduplication via a
-          128-bit message-ID ring buffer, ensuring message delivery resilience when
-          either transport path experiences loss.
-    \item A lightweight per-IP IDS that routes security events directly into the
-          adaptive state machine, collapsing threat detection and cryptographic response
-          into a single feedback loop.
-    \item A persistent offline message queue with timestamp-ordered replay on client
-          reconnection, decoupled from ratchet state to accommodate asynchronous delivery.
+    \item An adaptive engine with 3 states (Normal, Unstable, High Risk) based on a rolling packet loss rate, smoothed round-trip time, per-session authentication failure count, and cumulative replay detection count.
+    \item TLS support of the Signal Double Ratchet at the applica tion layer with per-message forward secrecy and break-in recovery without relying on the underlying TLS session state.
+    \item Simultaneous delivery over both TCP and UDP with deduplication in a 128-bit message-ID ring buffer, which guarantees delivery resilience in case one of the trans port paths is lost.
+    \item A light weight per IP IDS that routes security events directly into the adaptive state machine, reducing threat detection and adaptive cryptographic response to a single feed back loop.
+    \item When the client reconnects, offline message queue with timestamp ordered replay, while hiding the ratchet state from it and allowing asynchronous delivery.
 \end{enumerate}
 
-The remainder of this paper is organized as follows. Section~II surveys related work.
-Section~III describes the overall system architecture. Sections~IV and~V detail the
-wire protocol and cryptographic design. Sections~VI and~VII cover the adaptive engine
-with IDS coupling and the multipath transport with offline queuing. Section~VIII
-presents evaluation results, Section~IX discusses limitations and future directions,
-and Section~X concludes.
+The rest of this paper is organized as follows. In section~II related work is surveyed. This section - III describes the overall system architecture. The wire protocol and cryptographic design is described in Sections~IV and~V respectively. Sections~VI and~VII discuss the adaptive engine with IDS coupling and the multipath transport using offline queuing. Evaluation results are given in Section~VIII, limitations and future directions in Section~IX, and a conclusion in Section~X.
 
 % ============================================================
 %  SECTION II — RELATED WORK  (Member 1)
 % ============================================================
 \section{Related Work}
 
-\subsection{End-to-End Messaging Protocols}
+\subsection{End to End Messaging Protocols}
 
-The Signal Double Ratchet Algorithm~\cite{b1} has become the dominant construction for
-asynchronous end-to-end encrypted messaging. Unlike earlier session-based schemes that
-derived a single key for an entire conversation, the Double Ratchet chains two
-interlocked key derivation functions: a symmetric ratchet that advances on every message,
-and a Diffie--Hellman ratchet that periodically injects fresh entropy from a new
-ephemeral key exchange. The combination means that an attacker who recovers the chain
-state at any point in time cannot derive keys for messages outside the current DH epoch.
-Cohn-Gordon et al.~\cite{b2} provided the first rigorous security proof of this
-construction, establishing forward secrecy and post-compromise security as formally
-provable properties. Our implementation follows the Double Ratchet specification
-directly, adding DH ratchet frequency as an adaptive parameter so that the engine can
-increase key turnover under adversarial conditions.
+Signal Double Ratchet Algorithm~\cite{b1} has been the most popular construction of asynchronous end-to-end encrypted messaging. Instead of the previous session based schemes, which gave the same key for the whole conversation, the Double Ratchet protocol uses two tightly coupled ratchet functions: a symmetric ratchet that chops a new key for each message, and a Diffie Hellman ratchet that periodically introduces new entropy via a new ephemeral key exchange. The combination guarantees that if an attacker retrieves the state of the chain at any time, the attacker will not be able to generate keys for messages from an epoch other than the current epoch. The first rigorous security proof, which proved forward secrecy and post compromise security to be formally provable properties, was given by Cohn-Gordon et al.~\cite{b2}. We strictly adhere to the Double Ratchet specification, but introduce DH ratchet frequency as an adaptive parameter which allows the engine to raise key turnover under threatening circumstances.
 
 \subsection{Transport Layer Security}
 
-TLS~1.3~\cite{b3}, standardized in RFC~8446, eliminated several weaknesses carried
-forward from prior versions: static RSA key transport (which provides no forward
-secrecy), negotiable cipher suites including known-weak constructions, and a
-renegotiation mechanism that introduced side-channel risk. Version~1.3 mandates
-ephemeral (EC)DHE key exchange in every handshake and restricts cipher suites to a
-small set of authenticated encryption schemes. Our system configures OpenSSL to reject
-any version below 1.3, ensuring that the session-level protection cannot be silently
-downgraded. HKDF~\cite{b4}, specified in RFC~5869, underlies both the TLS~1.3 key
-schedule and our application-layer ratchet initialization, providing a clean separation
-between entropy extraction and key expansion.
+In RFC~8446, TLS~1.3~\cite{b3} removed several weaknesses inherited from previous versions: the static RSA key transport (which has no forward secrecy), negotiable cipher suites including those known to be weak, and a renegotiation mechanism, which added side-channel risk. Version~1.3 requires ephemeral (EC)DHE key exchange for all handshakes, and only a few cipher suites which support authenticated encryption schemes. Our system does not allow any version less than 1.3 of OpenSSL to be used, so that the protection of the session level cannot be downgraded silently. Like two other extensions we use, TLS~1.3 key schedule and our application-layer ratchet initialization rely on HKDF~\cite{b4} which is defined in RFC~5869 for a clean separation of entropy extraction and key expansion.
 
 \subsection{Adaptive and Context-Aware Security}
 
-The principle of adjusting system behavior in response to measured environmental
-conditions is well established in network management—adaptive bitrate streaming adjusts
-video quality to link capacity, and congestion control algorithms continuously revise
-transmission rate. Applying the same feedback principle to cryptographic policy has
-received considerably less attention in the literature. Most deployed secure messaging
-systems configure retry counts, padding behavior, and key rotation schedules as fixed
-constants. Our adaptive engine treats these as outputs of a state machine whose inputs
-are live network and security metrics, aligning the principle of least privilege with
-current threat level rather than worst-case assumptions.
+Adjusting system behaviour in response to measured environmental conditions is a well-known practise in network management in adaptive bitrate streaming the video quality adapts to the capacity of the link, and in congestion control algorithms the transmission rate is adjusted continually in response to measurements taken. The same feedback principle has been addressed much less in the literature with regard to cryptographic policy. The vast majority of deployed secure messaging systems set the number of retries, padding policy and key rotation timers as fixed values. We use these as outputs of a state machine that takes inputs from live network and security metrics instead of worst case assumptions, thus respecting the principle of least privilege in line with the current threat level.
 
 \subsection{Group Messaging Security}
 
-The Messaging Layer Security protocol~\cite{b5}, standardized as RFC~9420, addresses
-the scalability limitations of pairwise key establishment for group conversations through
-a tree-structured key agreement scheme (TreeKEM) that achieves logarithmic message
-complexity in the number of group members. Our current design handles broadcast as a
-loop of directed per-client encryptions, which is functionally correct for small groups
-but does not scale to larger deployments. Extending the system to MLS-style group
-ratcheting is identified in Section~IX as the primary direction for future work.
+The Messaging Layer Security protocol~\cite{b5}, which is standardized as RFC~9420, addresses the scalability limitations of pairwise key establishment for group conversations through a tree structured key agreement scheme (TreeKEM) that achieve logarithmic message complexity in the number of group members. Our current design handles broadcast as a loop of directed per client encryptions, which is functionally correct for small groups but does not scale for larger deployments. Extending the system to MLS style group ratcheting is identified in Section~IX as the primary direction for future work.
 
 % ============================================================
 %  SECTION III — SYSTEM ARCHITECTURE  (Member 1)
