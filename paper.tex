@@ -43,7 +43,7 @@ savitrikulkarni@rvce.edu.in}
 \maketitle
 
 \begin{abstract}
-Deployed systems are not well equipped to deal with the dynamic security conditions at runtime for static security configuration. We introduce a multi-client end-to-end encrypted chat system using C11 on POSIX which makes security posture a runtime variable and not a compile-time constant. TLS~1.3 transport security is layered on top of Signal-protocol Double Ratchet at the application layer, and all messages are sent at once via both TCP and UDP. The three-state adaptive engine polls smoothed packet-loss rates, authentication errors per session, and replay-detected events once per second and immediately sends reconfigured cryptographic and transport parameters to all active sessions. All the message payloads are padded to the same length (4,096~bytes) and a new X25519 keypair is created per message in High-Risk mode, to resist traffic analysis and reduce the amount of exposure following post-compromise. A statically allocated intrusion-detection subsystem is based on a lightweight, real-time, per-IP authentication failures and replay events that are directly coupled to the engine's state machine, allowing threat detection and cryptographic responses to be performed within a single feedback loop. Deduplication is done on both delivery paths using a 128-bit message-ID ring buffer, and on-disk offline queue – messages to disconnected recipients are stored in the offline queue within an OS enforced access-control boundary. 13 functional tests are passed: Authentications are simulated by brute force, injected packet loss is simulated, and all tests are passed.
+Deployed systems are not well equipped to deal with the dynamic security conditions at runtime for static security configuration. We introduce a multi-client end-to-end encrypted chat system using C11 on POSIX which makes security posture a runtime variable and not a compile-time constant. A Signal-protocol Double Ratchet operates at the application layer, layered over TLS~1.3 transport security, and all messages are delivered simultaneously via both TCP and UDP. The three-state adaptive engine polls smoothed packet-loss rates, authentication errors per session, and replay-detected events once per second and immediately sends reconfigured cryptographic and transport parameters to all active sessions. All the message payloads are padded to the same length (4,096~bytes) and a new X25519 keypair is created per message in High-Risk mode, to resist traffic analysis and reduce the amount of exposure following post-compromise. A statically allocated intrusion-detection subsystem is based on a lightweight, real-time, per-IP authentication failures and replay events that are directly coupled to the engine's state machine, allowing threat detection and cryptographic responses to be performed within a single feedback loop. Deduplication is done on both delivery paths using a 128-bit message-ID ring buffer, and on-disk offline queue – messages to disconnected recipients are stored in the offline queue within an OS enforced access-control boundary. 13 functional tests are passed: Authentications are simulated by brute force, injected packet loss is simulated, and all tests are passed.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -83,7 +83,7 @@ A variant of the Double Ratchet Algorithm has emerged as the common structure of
 
 \subsection{Transport Layer Security 1.3}
 
-RFC~8446 (TLS~1.3) \cite{b3} addressed several shortcomings of its predecessors: static RSA key transport (no forward secrecy), renegotiation and weak or susceptible to downgrade: attack cipher suites. Version~1.3 requires ephemeral (EC)DHE key exchange with all handshakes, and only allows a limited set of cipher suites that support authenticated encryption schemes. By default, our system will not allow anything less than TLS~1.3, which means that there is no possibility of downgrade of session-level protection. Our application-layer ratchet initialization is based on HKDF \cite{b4} (RFC5869), which is also used in the TLS~1.3 key schedule, providing separation of the entropy extraction and key expansion.
+RFC~8446 (TLS~1.3) \cite{b3} addressed several shortcomings of its predecessors: static RSA key transport (no forward secrecy), renegotiation and weak or susceptible to downgrade: attack cipher suites. Version~1.3 requires ephemeral (EC)DHE key exchange with all handshakes, and only allows a limited set of cipher suites that support authenticated encryption schemes. By default, our system will not allow anything less than TLS~1.3, which means that there is no possibility of downgrade of session-level protection. Our application-layer ratchet initialization is based on HKDF \cite{b4} (RFC~5869), which is also used in the TLS~1.3 key schedule, providing separation of the entropy extraction and key expansion.
 
 \subsection{Adaptive and Context-Aware Security}
 
@@ -106,7 +106,7 @@ The server is implemented as one long running process in the POSIX model. The \t
 
 There are two background threads that run independent from Client connections. Once per second, an adaptive engine thread examines the current metrics structure, and stores the resulting operating mode in a shared variable, EngineState, which is read by all other modules without any locking, with a maximum of 1 tick of latency. A separate thread is used for receiving frames on a UDP socket, and sends each frame through exactly the same 128-bit message-ID deduplication check that occurs on the TCP path before the unique frames are passed to the client handler.
 
-The server will process an incoming chat message, find the destination entry in the client table, and send it to all the active sessions, and broadcast an update of the user list. If the intended recipient is not online when the message is delivered, it is placed in a persistent, on-disk offline queue and is re-delivered, with the message being re-delivered again and re-encrypted by the recipient's current ratchet state when it is reconnected.
+The server will process an incoming chat message, find the destination entry in the client table, forward it to the destination client's thread, and broadcast a user-list update to all active sessions. If the intended recipient is not online when the message is delivered, it is placed in a persistent, on-disk offline queue and is re-delivered, with the message being re-delivered again and re-encrypted by the recipient's current ratchet state when it is reconnected.
 
 \subsection{Client}
 
@@ -232,7 +232,7 @@ Table~\ref{tab:modules} summarizes the main source modules and their roles.
 
 \subsection{Packet Framing and Header Structure}
 
-Each message has a common 28-byte binary header, including a 128-bit \texttt{msg\_id} field for deduplication on both the TCP and UDP delivery paths. All payload messages sent via \texttt{MSG\_CHAT} in the High-Risk mode will be padded so that the total encrypted payload frame is a pre-determined 4,112~bytes: 16~bytes IV (4-byte nonce prefix preceded by 12-byte nonce). This common size of the frame defeats traffic-analysis attacks based on the observation of the packet size to determine the message content or length. The full header layout is shown in Fig.~\ref{fig:header}.
+Each message has a common 28-byte binary header, including a 128-bit \texttt{msg\_id} field for deduplication on both the TCP and UDP delivery paths. All payload messages sent via \texttt{MSG\_CHAT} in the High-Risk mode will be padded so that the total encrypted payload frame is a pre-determined 4,112~bytes: 16~bytes IV (12-byte random nonce concatenated with a 4-byte counter). This common size of the frame defeats traffic-analysis attacks based on the observation of the packet size to determine the message content or length. The full header layout is shown in Fig.~\ref{fig:header}.
 
 \begin{figure}[t]
 \centering
@@ -246,7 +246,7 @@ Each message has a common 28-byte binary header, including a 128-bit \texttt{msg
 % ============================================================
 \section{Cryptographic Design}
 
-The security architecture uses multiple cryptographic layers operating in tandem to ensure independent security. The design is not based on any single security method; instead it builds on top of multiple security methods: transport-level security, public-key identity verification, ephemeral session-key establishment, continuous key evolution using Double Ratchet, and message-level symmetric encryption. Fig.~\ref{fig:cryptoarch} shows the entire architecture of this layered design.
+The security architecture uses multiple cryptographic layers operating in tandem to ensure independent security. The design is not based on any single security method; instead it builds on top of four interlocked security layers: transport-level confidentiality, public-key identity verification, ephemeral session-key establishment, and message-level symmetric encryption with continuous key evolution. Fig.~\ref{fig:cryptoarch} shows the entire architecture of this layered design.
 
 \begin{figure}[htbp]
 \centering
@@ -403,7 +403,7 @@ When a Critical message is enqueued, the client calls \texttt{pthread\_cond\_sig
 
 \subsection{Persistent Offline Message Queue}
 
-If a message is sent to someone who is not on-line, the server delivers the message asynchronously through a persistent, on-disk, offline queue. The end-to-end flow for directed message delivery---including the offline storage and replay path---is shown in Fig.~\ref{fig:msgflow}. The server's client handler makes the following undeliverable messages to the recipient's queue directory:
+If a message is sent to someone who is not on-line, the server delivers the message asynchronously through a persistent, on-disk, offline queue. The end-to-end flow for directed message delivery---including the offline storage and replay path---is shown in Fig.~\ref{fig:msgflow}. The server's client handler stores undeliverable messages in the recipient's queue directory:
 \begin{verbatim}
 data/offline_queue/<username>/
 \end{verbatim}
@@ -484,7 +484,7 @@ The current architecture is only suitable for pairwise directed messaging: the s
 
 \subsection{Adaptive Security Mechanisms and Threat Intelligence}
 
-The existing adaptive engine is based on low-level heuristic information like packet losses and authentication anomaly counters. Does not include more context intelligence in contemporary deployments. More detailed analyses of the behavior, peer-reputation scoring, and machine learning-based threat classification should be explored to allow for more adaptive security measures to be taken in the future while minimizing false escalations that add cryptographic overhead to the legitimate users.
+The existing adaptive engine is based on low-level heuristic information like packet losses and authentication anomaly counters. The current engine does not include deeper contextual intelligence present in contemporary deployments. More detailed analyses of the behavior, peer-reputation scoring, and machine learning-based threat classification should be explored to allow for more adaptive security measures to be taken in the future while minimizing false escalations that add cryptographic overhead to the legitimate users.
 
 \subsection{Formal Verification}
 
@@ -500,8 +500,6 @@ This key idea is that configuration and cryptographic operations are a function 
 Experimental testing has shown that the state transitions at the stated thresholds and that there is a thirty-second hysteresis window that ensures that the downgrade is not triggered early under borderline loss rates. It is empirically proven to support ratchet forward secrecy and break-in recovery and it is proven at packet capture level to enforce constant-payload-size. Passes all 13 functional tests.
 
 The most important architectural constraint, namely that the server must decrypt each message in memory to route and re-encrypt it, leaving the server as a trusted relay, hasn't been addressed. To solve this problem, we need to use X3DH pre-key exchange~\cite{b6} and the server will send encrypted blobs without ever having seen plaintext. The second near-term priority is extending the per-client encryption loops to a proper group ratchet mechanism similar to MLS~\cite{b5}. There are clear paths in both directions that develop directly on existing cryptographic infrastructure.
-
-\section*{Acknowledgment}
 
 \begin{thebibliography}{00}
 \bibitem{b1} M. Marlinspike and T. Perrin, ``The Double Ratchet Algorithm,'' Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/doubleratchet/
