@@ -393,9 +393,7 @@ roles.
 
 Each message has a common binary header of 28 bytes:
 
-\begin{equation}
-\underbrace{\texttt{ver}(1)}_{}\ |\ \underbrace{\texttt{type}(1)}_{}\ |\ \underbrace{\texttt{pri}(1)}_{}\ |\ \underbrace{\texttt{flags}(1)}_{}\ |\ \underbrace{\texttt{msg\_id}(16)}_{}\ |\ \underbrace{\texttt{len}(4)}_{}\ |\ \underbrace{\texttt{crc32}(4)}_{}
-\end{equation}
+\subsection{Packet Framing and Header Structure}
 
 The deduplication works across TCP using 128-bit \texttt{msg\_id}.
 and UDP paths. The size of all the payloads in the MSG\_CHAT channel are padded to a
@@ -407,7 +405,29 @@ To withstand the traffic analysis attack.
 % ============================================================
 \section{Cryptographic Design}
 
-\subsection{Cryptographic Stack}
+The proposed communication system's security architecture is based on the
+cryptographic systems are employed in series to provide defence against independent attacks.
+confidentiality is achieved using a combination of security mechanisms,
+integrity, authenticity, forward secrecy, break-in recovery and resilience
+Resists a wide range of opposition.  Rather than relying
+on a single protection layer, the design integrates transport-level
+The security, public-key identity verification, ephemeral session-key.
+establishment, continuous key-evolution using the Double Ratchet
+The algorithm is based on message-level symmetric encryption with a mix of aggressive key-lifecycle.
+applied management to a cohesive and reinforcing layered architecture.
+The entire architecture of this layered design is shown in Fig.~\ref{fig:cryptoarch}.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{4.png}
+\caption{Layered cryptographic architecture of the secure chat system. Six successive
+layers---TLS\,1.3 transport security, RSA-2048 authentication, X25519 DH key exchange
+with HKDF, Double Ratchet message-key evolution, AES-256-CBC message encryption, and
+key and memory hygiene---collaborate to provide secure channel establishment, identity
+assurance, forward secrecy, break-in recovery, constant-size padded ciphertext, and
+secure key management respectively.}
+\label{fig:cryptoarch}
+\end{figure}
 
 The system consists of four layers of cryptographic layering:
 
@@ -489,7 +509,7 @@ To prevent rapid, oscillatory state transitions under borderline conditions, the
 
 Upon any state transition, the server broadcasts an \texttt{MSG\_ENGINE\_STATE} control frame to all connected clients and updates the global variable \texttt{EngineState}. The configuration adjustments corresponding to each state are presented in Table~\ref{tab:adaptive_params}.
 
-\begin{table}[htbp]
+\begin{table*}[t]
 \caption{Adaptive Parameter Reconfiguration Matrix}
 \label{tab:adaptive_params}
 \begin{center}
@@ -507,7 +527,7 @@ DH Ratchet Frequency & 10 Messages & 10 Messages & Each Message \\
 \hline
 \end{tabular}
 \end{center}
-\end{table}
+\end{table*}
 
 Under degraded network conditions, combining smaller cryptographic chunk sizes with increased retry budgets significantly enhances delivery success rates over lossy links. In High-Risk mode, additional defensive mechanisms are enabled:
 \begin{itemize}
@@ -545,8 +565,8 @@ To avoid the overhead of dedicated background timer threads, block expiration is
 
 All blocking and unblocking actions are recorded in a dedicated IDS log file using the following format:
 \begin{verbatim}
-[IDS 2026-06-10 14:23:01] BLOCK from 192.168.1.50
-[IDS 2026-06-10 14:28:01] UNBLOCK 192.168.1.50
+[IDS 14:23:01] BLOCK 192.168.1.50
+[IDS 14:28:01] UNBLOCK 192.168.1.50
 \end{verbatim}
 
 % ============================================================
@@ -652,18 +672,166 @@ The adaptive engine's transitions and operational parameters under various condi
 % ============================================================
 \section{Limitations and Future Work}
 
-The current design has several acknowledged limitations. First, the server acts as a
-trusted re-encryption relay: each \texttt{MSG\_CHAT} is decrypted with the sender's
-ratchet and re-encrypted with the recipient's ratchet, so plaintext passes through
-server memory. Pure end-to-end encryption in the Signal sense would require X3DH
-pre-key exchange~\cite{b6} so the server never sees plaintext. Second, offline queued
-messages are stored as plaintext, exposing them in the event of a server breach.
-Third, TLS certificates are self-signed, suitable for lab evaluation but not
-production deployment. Fourth, RSA keypairs are stored as plain files rather than
-in hardware security modules. Fifth, broadcast messaging is implemented as a loop of
-per-client directed encryptions rather than a proper group ratchet such as
-MLS~\cite{b5}. Addressing these limitations, particularly adopting X3DH and MLS,
-constitutes planned future work.
+Though the proposed system shows an extensive and efficient,
+Secure communications architecture, including several layers of
+While cryptographic protection is available, there are a number of architectural limitations that remain,
+warrants clear discussion, further investigation and systematic action
+future enhancement.
+
+\subsection{Trusted Server Relay and Absence of Strict End-to-End Encryption}
+
+The greatest disadvantage of the present design is that it cannot be
+Trusted server relay for message forwarding.
+When a message is received by the server, as described in Section IV-E,
+It is completely decrypted with the sender's Double Ratchet receive context,
+To get the desired recipient identifier contained in the
+plaintext payload.  The recovered plaintext is subsequently re-encrypted with the same key and uses the same algorithm.
+Send-ratchet recipient's context before forwarding.  This server-visible
+In the present architecture, the decryption step is architecturally necessary in the current, Since the present architecture requires the decryption step to,
+recipient-resolution design, the system is unable to reach the strictness.
+Semantics of end-to-end encryption (E2EE) in the academic sense,
+As the server processes the content of the plaintext messages temporarily.
+
+This is a deliberate design compromise made; it significantly
+simplifies the implementation of offline message queuing, adaptive priority, delivery, etc. eases offline message queuing, adaptive priority, delivery, etc., implementation.
+There is server-side routing logic and management as well as frontend management.  But, it is a
+Quitting the security model provided by fully E2EE systems like
+Signal, where only anonymous ciphertexts are processed on the server.  A
+An aggressive user who has been able to break into the server's infrastructure
+Would then be able to access the message plaintexts for the short time that they are being forwarded.
+window.
+
+In future investigation, some pre-key distribution architecture should be investigated.
+This one is where recipients post signed pre-keys to the server, by using Diffie–Hellman.
+in advance.  Senders can then encrypt directly to the pre-key of the recipient
+Without needing to decrypt server-side.  Techniques such as those
+The Signal Protocol's sealed-sender and pre-key bundle are used by this.
+The mechanisms are advanced reference designs that enable this characteristic.
+
+\subsection{Offline Message Storage Security}
+
+One limitation is the off-line message storage.
+Messages that can't be sent right now due to the recipient being out of the way.
+offline are stored in plain text in the persistent offline of the server.
+Handle Queue as in Section IV-F.  Though the current design is applied to
+Using access controls and retention policies to reduce exposure risk, and
+If there is no at rest encryption a successful compromise of the data will result in the loss of information.
+This can be achieved by either logical access control or server's storage infrastructure.
+Failure, physical media theft, or backup interception — could create the possibility of exposing the
+All queued messages.
+
+For future design, the offline queued messages should be encrypted.
+Generating recipient derived keying material, so that only the recipient can use the same material for encryption or decryption,
+After reconnecting, has key to decrypt the queued
+content.  When combined with pre-key, the following conditions are met:
+distribution would make no server side plaintext exposure possible for
+the offline delivery route.
+
+\subsection{Identity Management and Public-Key Infrastructure}
+
+A new IDM framework is being designed to be light and
+In a controlled, closed-membership deployment environment is well-suited to.
+where everyone is familiar with everyone and there is trust distributed
+centrally.  A public key with an RSA private key is self-asserted by each user at registration.
+Furthermore, there is no certificate authority, revocation mechanism, and no authentication time.
+A web-of-trust infrastructure is in place.
+
+For deployments of large scale or open memberships, the model has a considerable size.
+limitations.  Without public-key infrastructure (PKI) there is
+No way to be certain of a public key presented during authentication.
+is truly a member of the claimed identity, and thus is susceptible to being victimized by it.
+Long Term Adversarial Impersonation (LTAI): long-term registration of a malicious key by an adversary.
+under a victim's username.  Further, there is no key-revocation
+“Mechanism” implies that it is not possible to invalidate a compromised identity key without.
+out-of-band coordination.
+
+Future work should evaluate certificate-based trust models, decentralised
+Such as key-transparency logs similar to identity verification mechanisms.
+A few of those who are already using the CONIKS and Key Transparency systems and automated.
+key-management infrastructures that can support the wider.
+Requirements for general purpose deployments: interoperability and revocations.
+
+
+\subsection{Scalability and Group Communication}
+
+The architecture at the moment is intended only for the communication between pairs
+Pairing of users' sessions.  This model works well for,
+It does not come with a built-in support for group in small and medium-sized deployments.
+secured delivery of one plain text message into a secure delivery scenario for messaging.
+Sent to several people at once.
+
+By a simple extension of the existing design, in which the sender, one by one,
+works linearly with each group member — scales linearly in both
+OPT overhead and bandwidth usage increase in proportion to group size, grows with the number of groups.
+Too difficult to do for groups of people.  Explicit group key management protocols,
+The IETF has developed a standard, such as the Message Layer Security (MLS) protocol
+Use key structures with trees in RFC 9420, which minimise the per-message overhead.
+The overhead for group operations to be reduced to O(log n) for the n people in the group.
+Future research should seek to assess integration of MLS or equivalent group-
+The ratchet designs are being used to connect to the existing structure. The ratchet elements are being integrated into the existing building fabric.
+
+\subsection{Adaptive Security Mechanisms and Threat Intelligence}
+
+The present adaptive security system activates DH ratchet updates and
+relative hierarchy of priority based on simple heuristic
+Indications like connection anomalies and rate deviations of messages.  While
+This method of threat response does not include the incorporation of this as an effective methodology.
+There are more rich sources of contextual intelligence in modern deployed systems
+environments.
+
+Advanced adaptive security mechanisms should be investigated in the future.
+Able to include behavioural analytics, peer-reputation scoring,
+A mix of context-aware information based on network telemetry and machine-learning-augmented information.
+assisted threat-classification models.  These improvements may allow for a greater number of
+Smart and on-the-spot security adaptation, and at the same time cutting down on the
+incorrectly escalated cryptographic costs
+Impacts on legitimate users.
+
+\subsection{Formal Verification}
+
+The security analysis is currently carried out at design and architecture level.
+level.  There is no formal security property verification of the protocol.
+tried with symbolic model checkers like ProVerif or Tamarin, or
+computational proof frameworks.  Formal verification is a known
+Provides best practice for cryptographic protocols and is becoming more common in the requirements of
+Standards organizations for protocols that are targeted for high assurance deployments.
+Future work should aim at formally modelling and mechanising the key.
+security properties guaranteed by the protocol such as forward secrecy,
+break-in recovery, and authentication soundness.
+
+\subsection{Summary}
+
+Overall the proposed system brings together key components to create a unified communication framework.
+These components include TLS 1.3 RSA-2048 digital signature authentication, X25519 Diffie-Hellman key exchange,
+HKDF-SHA256 key derivation and the Ratchet key evolution algorithm.
+The system also uses AES-256-CBC for message encryption adds constant-size traffic padding
+and includes offline message queuing.
+It uses 128-bit message identifiers for deduplication.
+The system has a security management feature.
+Some limitations were identified. They are trade-offs that come with the current design.
+They are not problems with the architecture.
+
+Future research will focus on areas.
+One area is pre-key distribution to eliminate server-side plaintext visibility.
+Another area is securing message storage.
+The research will also look at strengthening the identity management infrastructure.
+The goal is to extend the architecture to support group communication using MLS.
+The adaptive security subsystem will be improved with machine-learning-assisted threat intelligence.
+Formal verification of the core protocol properties is also a priority.
+This will ensure the security guarantees needed for production deployment, in sensitive communication environments.
+
+The proposed system integrates these components into a framework.
+The system uses TLS 1.3 for communication.
+The Double Ratchet algorithm helps evolve keys.
+The system uses AES-256-CBC for encryption.
+It also uses HKDF-SHA256 for derivation.
+The system has security management.
+It uses Diffie-Hellman key exchange.
+The system has offline message queuing.
+It uses 128-bit message identifiers.
+The system has constant-size traffic padding.
+The proposed system is designed to provide communication.
+The system uses RSA-2048 signature authentication.
 
 % ============================================================
 %  SECTION X — CONCLUSION  (Member 1)
