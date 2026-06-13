@@ -354,10 +354,12 @@ The IDS provides two reporting interfaces: \texttt{ids\_record\_auth\_fail()} an
 A replay attack is treated similarly: if an ID is found in the deduplication ring buffer, the event is considered a replay attempt and the engine is put into High-Risk mode with \texttt{metrics\_record\_replay()}. Blocked IPs are applied within the server's \texttt{accept()} loop, so that if an IP address is blocked, the connection will be dropped before the TLS~1.3 handshake, saving CPU cycles. Block expiry is done lazily, no dedicated timer thread: \texttt{ids\_expire\_blocks()} is called each time a message is received, and if the time elapsed since an IP's block timestamp has passed 300~seconds (5~minutes) the block flag is turned off and the tracking record is reset.
 
 All blocking and unblocking operations are recorded in a special IDS log file in the following format:
+{\footnotesize
 \begin{verbatim}
 [IDS 2026-06-10 14:23:01] BLOCK from 192.168.1.50
 [IDS 2026-06-10 14:28:01] UNBLOCK 192.168.1.50
 \end{verbatim}
+}
 
 % ============================================================
 %  SECTION VII — MULTIPATH TRANSPORT AND OFFLINE QUEUE  (Member 3)
