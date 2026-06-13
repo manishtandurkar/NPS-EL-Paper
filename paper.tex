@@ -37,33 +37,11 @@ email@institution.edu}
 \maketitle
 
 \begin{abstract}
-Secure messaging over unreliable and adversarial
-The following are the areas that the current static security configurations are compromising networks:
-Don't know how to react to shifting threat conditions. We present an
-Secure and end-to-end encrypted chat system, combining TLS and end-to-end encryption.
-1.3 transport security with a Signal-protocol Double Ratchet is available.There's a transport security upgrade of 1.3 with a Signal-protocol Double Ratchet available.
-Dual-path TCP and UDP delivery, and
-a three-state adaptive engine which reconfigures itself automatically
-Acknowledges cryptographic and transport parameters based on real time.
-Network metrics and identified security events. A lightweight per-
-router or switch authentication failures into the IDS.Failure to authenticate by the router or switch is fed into IDS.
-Detects replay events and feeds them directly to the engine state machine, triggering.
-Evolution from Normal to Unstable or High Risk mode with
-immediate effect. In High-Risk mode, all of the payloads are padded.
-DH ratchet steps take place on every to a constant 4096 bytes.
-The message type and the random delay in re-trying a message hinder traffic analysis.
-The system offers forward security and break in recovery per
-Multipath deduplication using a b-tree structure, and the use of a checksum to detect errors.Multipath deduplication based on a btree structure and use of a checksum to identify errors.
-Excessive data stored in the ring buffer of the message-ID is purged and the ring buffer is resized to accommodate the new data, while exceeding offline message is purged.
-delivery. When evaluating, transitions to and from correct states are confirmed.
-Tested several packet loss and authentication failure conditions,
-All 13 of the functional tests are good.
+Deployed systems are not well equipped to deal with the dynamic security conditions at runtime for static security configuration. We introduce a multi-client end-to-end encrypted chat system using C11 on POSIX which makes security posture a runtime variable and not a compile-time constant. TLS~1.3 transport security is layered on top of Signal-protocol Double Ratchet at the application layer, and all messages are sent at once via both TCP and UDP. The three-state adaptive engine polls smoothed packet-loss rates, authentication errors per session, and replay-detected events once per second and immediately sends reconfigured cryptographic and transport parameters to all active sessions. All the message payloads are padded to the same length (4,096~bytes) and a new X25519 keypair is created per message in High-Risk mode, to resist traffic analysis and reduce the amount of exposure following post-compromise. A statically allocated intrusion-detection subsystem is based on a lightweight, real-time, per-IP authentication failures and replay events that are directly coupled to the engine's state machine, allowing threat detection and cryptographic responses to be performed within a single feedback loop. Deduplication is done on both delivery paths using a 128-bit message-ID ring buffer, and on-disk offline queue – messages to disconnected recipients are stored in the offline queue within an OS enforced access-control boundary. 13 functional tests are passed: Authentications are simulated by brute force, injected packet loss is simulated, and all tests are passed.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Kidney Scholars, cryptography, security.End-to-end encryption, adaptive security, Dou-Kidney Scholars, cryptography, security.
-or any other type of transport.
-Securing messages with forward secrecy.
+end-to-end encryption, adaptive security, Double Ratchet, TLS~1.3, intrusion detection, forward secrecy, multipath transport
 \end{IEEEkeywords}
 
 % ============================================================
@@ -71,199 +49,62 @@ Securing messages with forward secrecy.
 % ============================================================
 \section{Introduction}
 
-In the last decade or so, secure messaging has developed into a
-Is a requirement in both civilian and enterprise and op-
-In both rational and nonrational communication situations. The cryptographic
-The primitives used in these systems have come to maturity, and they are used in a variety of other systems as well.
-The Transport Layer Security version 1.3 \cite{b3} offers:
-authenticated and forward security encryption for sessions
-The above list is not exhaustive, and there might be other application-layer protocols like the Signal Dou-
-ble Ratchet \cite{b1} guarantees those to the per-message level also.
-level. Much less attention has been given to what has received comparatively less attention is
-A system's operating environment is related to the way in which it functions.
-its security posture. Most systems deployed are based on a set
-If a cryptographic configuration has been selected at design time, then rely on that one,
-on that configuration for ever so long, no matter what the network configuration was changed to.
-Or the enemy does it in actuality.
-This is not true in reality. A link experiencing
-If 20\% packet loss then other retry behavior than one will be required.
-a session which is healthy, under active authentication brute,
-force requires more frequent key rotation, and IP level blocking that
-No failure in a session means does not. Static configurations
-Is able to make this distinction. In the end, it leads to either a posture or a postures.
-that is set to be permanently tuned for the worst case – accepting un-
-required overhead under benign conditions— or the more challenging one tuned for.required overhead under benign conditions or the more difficult one tuned for.
-when it is the common case (leaving it underdefended), then the system is underdefended.
-conditions deteriorate.
-In this paper, a multi-client end-to-end encrypted communications system has been described.
-That's a chat system that was implemented in C (C11, POSIX).
-response to security as a run-time variable. The system combines
-Parents are welcome to come by and ask questions about the warden's identity.Parents can visit in person to question the warden about who he is.
-When processing data, both paths are used to share the same application layer.At the application layer, both paths are used for data processing, simultaneous dual-path de-
-Encryption for both TCP and UDP, and adaptive en-cryption in three states over them.
-gine is a function whose input is combinations of network quality.
-A co-reside per-IP intrusion detection system that will be used to take measurements.
-system (IDS). As engine judges the conditions
-Have become degraded due to increased packet loss, replay detection
-Attempts or a number of failures in authentication from
-One address – it switches to its higher mode of operation and immediately –
-diately re-configures the cryptographic and transport parameters
-For all sessions active. The reconstruction to the baseline mode is
-intentionally hysterical, must last for 30 seconds in a row
-Avoid making a downgrade if there are stable metrics in the future, because of oscillatory
-Behavior to be exhibited at the critical level.
+In the last ten years, secure messaging has gone from a niche to a standard requirement in both civilian and operational settings. These systems have developed very good cryptographic primitives: TLS version 1.3 \cite{b3} offers session-level encryption that is authenticated and forward-secret at the transport layer; the Signal Double Ratchet algorithm \cite{b1} extends comparable guarantees to the individual message level. Much less discussed is the connection between an environment in which a system operates and the security stance of that system.
 
-Main contribution of this work:
+The majority of deployed secure messaging systems can be statically configured at design time and remain fixed over time as network conditions or hostile factors change. In practice, this is a significant restriction. When the link drops 20% of packets, it requires different behaviour to be applied to it when it is retried than when it is healthy; when a session is being brute-forced using active authentication, more frequent key rotations and IP-level blocking are warranted than for a quiet session. Such a distinction can only be made in a dynamic situation: either a posture is permanently configured for the worst case, thus wasting resources unless conditions are severe or a posture is optimized for the common case, leaving the system underdefended when conditions get worse.
+
+A multi-client end-to-end encrypted chat system is described which implements security as a run-time parameter, realised in C11 on POSIX. It includes an adaptive engine that listens to network quality metrics and to IDS-identified security events to adjust encryption and transport parameters as needed, a three-state engine, a Signal-protocol Double Ratchet at the application layer, and TLS~ 1.3 transport security, as well as simultaneous dual-path message delivery over both TCP and UDP. A co-resident per-IP intrusion-detection subsystem (IDS) directly passes authentication failures and replay events to the engine's state machine. The main contributions of this work are:
+
 \begin{enumerate}
-    \item There is a three-state adaptive engine that is Normal, Unstable, and High-.
-          Modeled After risk(Due to a smoothed packet loss rate)
-          time to the first success and failure count per session.
-          and cumulative replay counter is incremented.
-    \item Application of 2) the Signal Double Ratchet at the applica-
-          In addition to a per message forward security option, it includes a tion layer.
-          Quickly recover even if underlying TLS is broken.
-          session state.
-    \item Simultaneous delivery of dual path, TCP and UDP
-          Deduplication using a 128 bit message-ID ring buffer,
-          When sending messages across the enterprise, ensuring message delivery resilience when either trans- or receiver-side is down.
-          Through the port path, there is loss of information.
-    \item An IDS with a lightweight implementation, that routes security events per IP
-          Directly into adaptive state machine, collapse threat
-          Detection and cryptographic response has been combined into a single feed-
-          back loop.
+    \item Three-state adaptive engine based on smoothed packet-loss rate, per-session authentication failure counter and a cumulative replay counter.
+    \item Double Ratchet at the application level which includes per-message forward secrecy, and the ability to recover quickly if session-keys are compromised.
+    \item Resilient delivery of messages over simultaneous dual-path delivery (TCP & UDP) with 128-bit message-ID deduplication.
+    \item Lightweight, statically allocated IDS that takes per-IP security events directly into the adaptive state machine, combining threat detection and cryptographic response in one feedback loop.
 \end{enumerate}
 
-The state of offline message queue is persistent and has a timestamp:
-The goal is to order replay on client reconnection, but not coupled with.
-Expand the state to be able to handle asynchronous delivery.
+A persistent offline message queue with timestamp ordered filenames allows ordered replay on a client reconnection without tying queue state to an active ratchet state, thus allowing for fully asynchronous delivery.
 
-In the rest of this paper, we outline the remainder of the paper. Sec-
-Familiarize self with survey of related work (dbtions II). Section III gives a general description of the overall.
-system architecture. The wire protocol is described in detail in sections IV and V.
-and cryptographic design. The last two sections (VI and VII) are devoted to the
-The adaptive engine, IDS coupling and multipath transport feature.
-with offline queuing. The results of the evaluations are available in Section VIII,
-The limitations and future directions are discussed in Section IX,
-Section X concludes.
+The rest of this paper is structured as follows. The related research is surveyed in Section~II. The overall system architecture is described in Section~III. The wire protocol is described in detail in section~IV, and the design of the cryptographic system is described in section~V. Sections~VI and~VII describe the adaptive engine and IDS integration and multipath transport and offline queuing. The results of evaluations are reported in Section~VIII. Section~IX discusses limitations and future directions, and Section~X concludes.
 
 % ============================================================
 %  SECTION II — RELATED WORK  (Member 1)
 % ============================================================
 \section{Related Work}
 
-\subsection{Messaging protocols which handle end-to-end messaging.}
+\subsection{End-to-End Messaging Protocols}
 
-The Signal Double Ratchet Algorithm \cite{b1} has now become the
-AES is generally used in an asynchronous end to end encrypted manner.
-messaging. Unlike the previous session based schemes, which were based on the session coverage approach:
-a single key for an entire conversation, the Double Ratchet, is essential.The Double Ratchet, a single key that is used for an entire conversation, is essential.
-chains two interlocked key derivation functions; a symmetric key is a random value that is used to encrypt decryption a second time.
-key exchange protocol that works with any message received.key that is passed up on each message received, and a Diffie–Hellman
-ratchet which occasionally spits a fresh entropy out of a new
-ephemeral key exchange. The whole effect is that of a
-The person who finds the chain at any time during the game.
-Will not be able to derive keys for messages not in the current DH epoch.
-Cohn-Gordon et al. \cite{b2} were first to give a rigorous security
-This proof of this construction is used to establish forward secrecy and
-Make the formal properties of post-compromise security as properties.
-We are implementing our system following the Double Ratchet spec.
-Directly, as an adaptive parameter, adding DH ratchet frequency.
-To make key turnover greater under challenging conditions.
-conditions.
+A variant of the Double Ratchet Algorithm has emerged as the common structure of an asynchronous end-to-end encrypted messaging system: the Signal \cite{b1} protocol. The Double Ratchet is a variant of the ratchet that takes two interlocked key-derivation functions: a symmetric ratchet to generate a new key on every message sent, and a Diffie--Hellman ratchet to periodically add new entropy from a new ephemeral key exchange. The result is that if an attacker is able to recover the chain state at any point in time, they can't produce any keys for messages outside the current DH epoch. The first formal security proof for this construction was given by Cohn-Gordon et al. \cite{b2} who proved forward secrecy and post-compromise security. Our implementation is a straight copy of the Double Ratchet specification, with DH ratchet frequency being adaptive, increasing automatically when the conditions are bad.
 
-\subsection{Internet Protocol.F. Transmission Control Protocol.}
+\subsection{Transport Layer Security 1.3}
 
-Several were removed in TLS 1.3 \cite{b3} which was standardized in RFC 8446.
-Improvements that were taken from previous versions are noted: static RSA
-negotiation of key transport (no forward secrecy), renegotiation of key exchange, and
-Cipher suites that can be broken, such as known weak ones,
-A renegotiation process that added a side channel risk.
-Version 1.3 requires ephemeral (EC)DHE key exchange to be used.
-All handshakes and only uses a few cipher suites
-There are a number of authenticated encryption schemes. Our system configures
-OpenSSL will refuse to use anything less than 1.3, so that it will never be able to use anything that was incompatible with it.
-Silent downgrade of the session-level protection is not allowed.
-The TLS 1.3 protocol is based on the following protocol: HKDF \cite{b4} which is described in the RFC 5869.
-Our application-layer ratchet initialization, key schedule and
-Properly separating entropy extraction and
-key expansion.
+RFC~8446 (TLS~1.3) \cite{b3} addressed several shortcomings of its predecessors: static RSA key transport (no forward secrecy), renegotiation and weak or susceptible to downgrade: attack cipher suites. Version~1.3 requires ephemeral (EC)DHE key exchange with all handshakes, and only allows a limited set of cipher suites that support authenticated encryption schemes. By default, our system will not allow anything less than TLS~1.3, which means that there is no possibility of downgrade of session-level protection. Our application-layer ratchet initialization is based on HKDF \cite{b4} (RFC5869), which is also used in the TLS~1.3 key schedule, providing separation of the entropy extraction and key expansion.
 
-\subsection{The World of Distributed, Adaptive and Context-Aware Security}
+\subsection{Adaptive and Context-Aware Security}
 
-The idea of modifying the system's reaction to its situations
-There has been ample research on measuring environmental conditions in net-
-work management---adaptive bitrate streaming adjusts video
-trol traffic flow.capacity and congestion control algorithms con-
-tinuously revise transmission rate. Feedback is about the same content, but with a different approach.
-There has been a significant amount of research done on the principle to cryptographic policy.
-Less attention has been given in the literature. The majority of deployed secure messaging.
-systems set the number of retries, padding and key
-Make rotation schedules constants. Our adaptive engine
-takes these as the output of a state machine with inputs of
-The principle of aligning live network and security metrics is the same as in the past.The concept of live network and security metrics remains unchanged since then.
-least privilege (current threat level) instead of worst case.
-assumptions.
+For example, adaptive bitrate streaming—variations in video quality based on available bandwidth—is a standard practice in network management, and congestion control algorithms continuously adjust the rate on which packets are sent, based on the packet loss observed. A similar feedback principle is not much discussed in the literature in the context of cryptographic policy. The majority of implemented secure messaging systems have fixed key rotation periods, padding policies, and retries. The adaptive engine uses these parameters as outputs of a state machine, where the inputs are actual network and security metrics, so as to provide protection at an appropriate level relative to the threat level measured during runtime instead of worst-case scenarios.
 
-\subsection{The Security of Group Messaging in D.The Security of Group Messaging in D.}
+\subsection{Group Messaging Security}
 
-The Messaging Layer Security protocol \cite{b5} has been standardized.
-as RFC 9420, solves scalability issues with pairwise (introduces new scalability concepts).
-Using a tree to set up the group for conversations.
-A structured key agreement scheme (TreeKEM) which achieves the following properties:A scheme for structured key agreement (TreeKEM) having the following properties:
-The number of groups of messages has logarithmic message complexity.
-members. Currently our design is a loop of broadcast as follows:
-This enables per-client directed encryptions, that's right.
-for small groups only and not scalable for larger deployments. Ex-
-tending to system to MLS ratcheting is identified
-However, in Section IX, it is suggested as the main direction of future work.
+The Messaging Layer Security protocol \cite{b5} also tackles the scalability problem of pairwise encryption for group conversations by proposing a group key agreement scheme (TreeKEM) with a logarithmic number of messages in the number of group members, which is standardized as RFC~9420. The current design is based on a per-client directed encryption loop, suitable for small groups, but not for large deployments. One of the main directions suggested for future work in Section~IX is the extension of the system to MLS-style ratchet trees.
 
 % ============================================================
 %  SECTION III — SYSTEM ARCHITECTURE  (Member 1)
 % ============================================================
 \section{System Architecture}
 
-The system is two-tiered (Client-Server).
-The server is bound to the primary port 8080 on the tcp socket (TLS-wrapped option is enabled).
-and UDP port 8081 (back alternative). Clients link up both on the internet and by telephone.
-The TLS handshake finishes, and then transports is also performed simultaneously.
-on the TCP channel.
+The system is a two-tiered client-server system. A backup transport path is set up, with a TLS-wrapped TCP socket on port~8080, and a plain UDP socket on port~8081, both of which are bound on the server. The application-layer DH key exchange starts after a TLS handshake on the TCP channel has been completed by the client and the server.
 
 \subsection{Server}
 
-The server is one long running process of a POSIX process type. An
-As the socket is TCP socket, accept() waits for a connection. accept() loop blocks on the TCP socket; each ac-
-Processes are separated from processes that are already active.New processes are accepted for a connection before being detached from processes already running.
-pthread running \texttt{handle\_client()}, which handles
-The TLS handshake protocol, DH key exchange, authentication, and message encryption are conducted in this manner.
-Routing to and from sage, and eventual clean up for that client. This
-ensuring that state exists only per client, using a thread-per-connection model.
-The maximum number of concurrent sessions (\texttt{MAX\_CLIENTS}) is 50.
-Any thread that is accessing the client registry shares a
-serialization mutex for accessing the
-\texttt{ClientEntry[50]} table.
-There are two background threads, which operate independently of client con-
-nections. A set of adaptive engine threads are evaluated by the adaptive engine thread.
-Once every second, measures structure and writes current
-All other variables refer to the operating mode to a shared \texttt{EngineState} variable;
-modules read without acquiring lock, tolerant of
-With a delay of one-tick at most. A UDP receiver thread dedicated for data is draining.
-the UDP socket was sending frames continuously, each one of them was sent to
-Deduplication check based on the same 128-bit message-ID used on the
-TCP path and forwards unique frames to the suitable client
-handler.
-This will remove the corre- from the client's list of connections.
-Retrieves the corresponding entry in the client table and sends up an updated
-To all other sessions, add them to the user list. The destination of the message(s) sent to a recipient.
-As soon as someone is offline when the delivery is made, their info is stored in the persistent.
-The following is sent as an offline queue and delivered---re-encrypted with the recipient's public key.
-You can have a state set as the current ratchet state, when reconnecting.
+The server is implemented as one long running process in the POSIX model. The \texttt{accept()} loop hangs on the TCP socket; each new connection accepted is detached to a new \texttt{pthread} which performs the TLS handshake, DH key exchange, authentication, message routing, and eventual teardown of that client. Each connection represents a single state, this thread per connection approach provides strict per-client state. There is a limit of \texttt{MAX\_CLIENTS}~=~50 concurrent sessions, and all threads that access the shared client registry will do so in series, through one mutex on \texttt{ClientEntry[50]}.
+
+There are two background threads that run independent from Client connections. Once per second, an adaptive engine thread examines the current metrics structure, and stores the resulting operating mode in a shared variable, EngineState, which is read by all other modules without any locking, with a maximum of 1 tick of latency. A separate thread is used for receiving frames on a UDP socket, and sends each frame through exactly the same 128-bit message-ID deduplication check that occurs on the TCP path before the unique frames are passed to the client handler.
+
+The server will process an incoming chat message, find the destination entry in the client table, and send it to all the active sessions, and broadcast an update of the user list. If the intended recipient is not online when the message is delivered, it is placed in a persistent, on-disk offline queue and is re-delivered, with the message being re-delivered again and re-encrypted by the recipient's current ratchet state when it is reconnected.
 
 \subsection{Client}
 
-There are two client implementations: one GTK3 graph- +
-Two types of clients are available: ical client and command-line client. Both share the same
-From a networking and cryptographic perspective, they are different due to underlying networking and cryptographic modules.
-only in their presentation layers.
+The networking and cryptographic modules are identical in both client implementations, which differ only in the presentation modules: GTK3 (graphical) client and command-line client.
 
 \begin{figure}[t]
 \centering
@@ -286,10 +127,10 @@ only in their presentation layers.
 \begin{scope}[on background layer]
   \node[grp, fit=(send)(pq)(recv)(dd)] (cbox) {};
 \end{scope}
-\node[font=\small\bfseries, above=4pt of cbox] {The accept() call is made by Client (GTK / CLI).};
+\node[font=\small\bfseries, above=4pt of cbox] {Client (GTK / CLI)};
 
 % SERVER
-\node[box] (hnd)  at (6.0,  1.4) {handle client $\times N$};
+\node[box] (hnd)  at (6.0,  1.4) {handle\_client $\times N$};
 \node[box] (ct)   at (6.0,  0.6) {Client Table};
 \node[box] (eng)  at (6.0, -0.2) {Adaptive Engine};
 \node[box] (ids)  at (6.0, -1.0) {IDS};
@@ -311,7 +152,7 @@ only in their presentation layers.
 
 % UDP backup
 \draw[dar] (send.east) to[out=-15, in=170]
-    node[below=1pt, lbl] {UDP metrics}
+    node[below=1pt, lbl] {UDP backup}
     (udpr.west);
 
 % CLIENT INTERNAL
@@ -327,32 +168,17 @@ only in their presentation layers.
 
 \end{tikzpicture}%
 }
-\caption{System architecture. Solid arrows: TCP/TLS 1.3 paths; Dashed arrows: Unconfirmed, insecure paths.
-The UDP backup route is indicated by the arrow. The engine's state is propagated by the adaptive engine.
-to all handle\_client threads, based on metrics from the IDS.}
+\caption{System architecture. Solid arrows indicate TCP/TLS~1.3 paths; the dashed arrow indicates the UDP backup path. The adaptive engine propagates its current state to all \texttt{handle\_client} threads based on metrics aggregated from the IDS.}
 \label{fig:arch}
 \end{figure}
 
-After authentication is finished, each client has two threads running.
-For outgoing messages the send thread dequeue the messages from three-
-level priority queue in priority order, derives the next message
-or decrypts the encrypted plaintext from the ratchet, encrypts the padded plaintext under or decrypts the encrypted plaintext from the ratchet.
-Transmits the resulting frame over both in parallel.
-The TLS/TCP and UDP paths. The read from the receive thread is
-The local the TLS socket, checks the message ID against the local
-deduplication ring buffer, decrypts payload and delivers
-it to the UI layer. The delivery is posted in the GTK client to
-The function ``the GTK main loop via \texttt{gdk\_threads\_add\_idle()}'' is called.
-that any mutations to widgets take place on the UI thread. In the CLI
-The receive thread writes directly to standard output in the case of client.
+Once the authentication is done, every client will execute two threads. The send thread removes messages from a three-level priority queue in priority order, generates the next message key based on the current ratchet, encrypts the padded plaintext using that key and sends the frame simultaneously using TLS/TCP and UDP. The receive thread consumes the message from the TLS socket, verifies the message ID against the local deduplication ring buffer, decrypts the payload and passes it to the UI layer. In the GTK client, the delivery is placed on the main loop using \texttt{gdk\_threads\_add\_idle()}, ensuring that all the mutations of widgets are done on the UI thread; in the CLI client, the receive thread directly writes to the standard output.
 
 \subsection{Architecture Overview}
-Fig. 1 shows the two tier system, and the main data.
-flows.
+Fig.~\ref{fig:arch} illustrates the two-tier architecture and the primary data flows.
 
 \subsection{Module Overview}
-The main source modules and their equivalents are summarised in table I.
-roles.
+Table~\ref{tab:modules} summarizes the main source modules and their roles.
 
 \begin{table*}[t]
 \caption{System Module Map}
@@ -389,81 +215,43 @@ roles.
 % ============================================================
 %  SECTION IV — WIRE PROTOCOL AND CONNECTION LIFECYCLE  (Member 2)
 % ============================================================
-\section{A basic protocol for Wiring and Connection Lifecycle.A simple protocol for Wiring and Connection Lifecyle.}
-
-Each message has a common binary header of 28 bytes:
+\section{Wire Protocol and Connection Lifecycle}
 
 \subsection{Packet Framing and Header Structure}
 
-The deduplication works across TCP using 128-bit \texttt{msg\_id}.
-and UDP paths. The size of all the payloads in the MSG\_CHAT channel are padded to a
-AES ciphertext (4096 bytes) + 16-byte IV (4 bytes IV + 12-byte nonce) = 4112 bytes
-To withstand the traffic analysis attack.
+Every message carries a common 28-byte binary header that includes a 128-bit \texttt{msg\_id} field used for deduplication across both the TCP and UDP delivery paths. All \texttt{MSG\_CHAT} payloads in High-Risk mode are padded so that the total encrypted frame is a fixed 4,112~bytes: a 16-byte IV (4-byte nonce prefix concatenated with a 12-byte nonce) followed by 4,096~bytes of AES ciphertext. This uniform frame size defeats traffic-analysis attacks that infer message content or length from observed packet sizes.
 
 % ============================================================
 %  SECTION V — CRYPTOGRAPHIC DESIGN  (Member 2)
 % ============================================================
 \section{Cryptographic Design}
 
-The proposed communication system's security architecture is based on the
-cryptographic systems are employed in series to provide defence against independent attacks.
-confidentiality is achieved using a combination of security mechanisms,
-integrity, authenticity, forward secrecy, break-in recovery and resilience
-Resists a wide range of opposition.  Rather than relying
-on a single protection layer, the design integrates transport-level
-The security, public-key identity verification, ephemeral session-key.
-establishment, continuous key-evolution using the Double Ratchet
-The algorithm is based on message-level symmetric encryption with a mix of aggressive key-lifecycle.
-applied management to a cohesive and reinforcing layered architecture.
-The entire architecture of this layered design is shown in Fig.~\ref{fig:cryptoarch}.
+The security architecture employs several cryptographic mechanisms in series so that each layer provides independent defense. Rather than relying on any single protection mechanism, the design integrates transport-level security, public-key identity verification, ephemeral session-key establishment, continuous key evolution through the Double Ratchet, and message-level symmetric encryption into a cohesive layered architecture. The complete structure of this layered design is illustrated in Fig.~\ref{fig:cryptoarch}.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=\columnwidth]{4.png}
-\caption{Layered cryptographic architecture of the secure chat system. Six successive
-layers---TLS\,1.3 transport security, RSA-2048 authentication, X25519 DH key exchange
-with HKDF, Double Ratchet message-key evolution, AES-256-CBC message encryption, and
-key and memory hygiene---collaborate to provide secure channel establishment, identity
-assurance, forward secrecy, break-in recovery, constant-size padded ciphertext, and
-secure key management respectively.}
+\caption{Layered cryptographic architecture of the secure chat system. Six successive layers---TLS\,1.3 transport security, RSA-2048 authentication, X25519 DH key exchange with HKDF, Double Ratchet message-key evolution, AES-256-CBC message encryption, and key and memory hygiene---collaborate to provide secure channel establishment, identity assurance, forward secrecy, break-in recovery, constant-size padded ciphertext, and secure key management respectively.}
 \label{fig:cryptoarch}
 \end{figure}
 
-The system consists of four layers of cryptographic layering:
+The system employs four interlocked cryptographic layers:
 
 \begin{enumerate}
-    \item X25519 ECDH (MSG\_DH\_INIT): This is a key agreement, also known as ECDH (DH\_INIT).
-    / MSG\_DH\_RESP). The common secret is created using:
-    A new approach is offered by HKDF \cite{b4} to generate initial ratchet keys.
-    In addition to the above,
-    \item 2) Identity Authentication --- RSA-2048 signatures over is also supported.
-    the username bytes. The public key is stored on the server.
-    Performs initial login and checks for it on future logins.
-    Avoid using TLS 1.2 or lower to avoid TLS 1.3.To avoid TLS 1.3, use
-    \item 3) Transport Confidentialty --- TLS 1.3.
-    and below disabled.
-    \item Use E2EE Confidentiality (AES-256-CBC per-) if available.If available, use E2EE Confidentiality (AES-256-CBC per-).
-    message keys that are derived from the Double Ratchet chain.
-    Works within TLS without being compromised by TLS.
-    expose message content.
+    \item \textbf{Session Key Agreement} --- X25519 ECDH (\texttt{MSG\_DH\_INIT} / \texttt{MSG\_DH\_RESP}) establishes a shared secret, which HKDF \cite{b4} then expands into the initial ratchet root and chain keys.
+    \item \textbf{Identity Authentication} --- RSA-2048 signatures over the username bytes authenticate both parties; the public key is registered on the server at first login and verified on every subsequent authentication.
+    \item \textbf{Transport Confidentiality} --- TLS~1.3 wraps all TCP I/O; OpenSSL is configured to reject TLS~1.2 and earlier, preventing silent protocol downgrade.
+    \item \textbf{Message-Level Confidentiality} --- AES-256-CBC with per-message keys derived from the Double Ratchet chain provides end-to-end encryption that operates inside the TLS tunnel and does not expose message content even if the TLS session were compromised.
 \end{enumerate}
 
-\subsection{Bitcoin's Lightning Network}
+\subsection{Double Ratchet Key Evolution}
 
-The Double Ratchet \cite{b1} has two double ratchets.
-On each and every message, the symmetric ratchet moves forward:
+The Double Ratchet \cite{b1} advances its symmetric ratchet on every message:
 \begin{align}
     \text{msg key} &= \text{HMAC-SHA256}(\text{chain key},\ \texttt{0x01}) \\
     \text{new chain key} &= \text{HMAC-SHA256}(\text{chain key},\ \texttt{0x02})
 \end{align}
-A different derived key is used for each message; old chain key.
-is discarded immediately. The DH ratchet is an extra Diffie--
-Hellman entropy every \texttt{dh\_ratchet\_freq} messages, pro-
-viding break-in recovery. This frequency is increased to 20 in High Risk mode.
-The is set to 1, which results in a new X25519 keypair being created every
-message.
-
-All important data is purged using \texttt{OPENSSL\_cleanse()} immediately after use.
+Each message thus uses a distinct derived key, and the old chain key is discarded immediately after the derivation step. The DH ratchet injects additional Diffie--Hellman entropy every \texttt{dh\_ratchet\_freq} messages, providing break-in recovery. In High-Risk mode this frequency is set to~1, causing a new X25519 keypair to be generated for every message and maximizing the rate of key material turnover. All ephemeral key material is erased with \texttt{OPENSSL\_cleanse()} immediately after use.
 
 % ============================================================
 %  SECTION VI — ADAPTIVE ENGINE AND IDS  (Member 3)
@@ -473,219 +261,93 @@ All important data is purged using \texttt{OPENSSL\_cleanse()} immediately after
 
 \subsection{Three-State Adaptive Engine}
 
-A continually changing adaptation mechanism constantly adapts sys-
-Implements network behavior changes as it sees fit and as per network security policies
-Events are guaranteed to be communicated reliably and information is not lost, as events are guaranteed to be received.
-tiality. Instead of simply taking a one-time configuration, the design-time options are converted to a dynamically loaded configuration at runtime.
-It dynamically changes transport and cryptographic functions at the same time, in order to
-The ability to observe the properties at runtime and make use of that information. The core
-One such thread is a background daemon thread that runs of this framework.
-Once a week, the server that processes the telemetry and security data.
-per second. Each time the engine does a cycle of evaluations, it gathers
-and collects all active client sessions' telemetry data.
-Converted to a common Metrics structure.
+The adaptive engine translates measured operating conditions into concrete cryptographic and transport parameter changes. Rather than applying a single design-time configuration, the engine continuously monitors a set of network and security indicators and rewrites the active parameter set whenever thresholds are crossed. A background daemon thread performs one evaluation cycle per second, collecting telemetry from all active client sessions and collapsing it into a shared \texttt{Metrics} structure.
 
-Other parameters are continuously monitored as follows:
-updated:
+The following metrics are tracked and refreshed on each evaluation cycle:
 \begin{itemize}
-    \item A weighted average of \texttt{packet\_loss\_rate} over a rolling period of time:
-    The percentage of packets that were lost in the past 100 packets sent.
-    \item The smoothed round-trip time (\texttt{rtt\_ms}): Computed from the following:
-    An Exponentially Weighted Moving Average (EWMA).
-    \item thentication attempts that has been incremented by the failed logon attempt.
-    Attempts to detect unauthorised access to it, thentication aims to
-    brute-force activities.
-    \item In the comments, you can find the \texttt{replay\_count:} field, which is the total number of duplicate.
-    Number of message replays detected while executing.
-    \item timeout events that have occurred.consecutive\_timeouts: The number of socket- timeout events that have been seen consecutively.
-    The number of level timeout events that happened for the current transactions.
+    \item \texttt{packet\_loss\_rate}: a weighted rolling average computed over the most recent 100 packets sent.
+    \item \texttt{rtt\_ms}: smoothed round-trip time maintained using an exponentially weighted moving average (EWMA).
+    \item \texttt{auth\_fail\_count}: cumulative count of authentication failures observed from the current IP, used to detect brute-force activity.
+    \item \texttt{replay\_count}: total number of duplicate message IDs detected during the current evaluation window.
+    \item \texttt{consecutive\_timeouts}: number of consecutive socket-level timeout events observed for the active sessions.
 \end{itemize}
 
-Each 1 second sampling period, at the end of which the engine
-baselines and thresholds.Compares the metrics they have gathered with pre-determined operating baselines and thresholds.
-In the system, transition thresholds are used to switch the system to the optimal execution.
-state. It offers three modes of execution: Normal,It comprises three modes of execution: Normal, Unstable, and High-Risk.
+At the end of each one-second sampling interval, the engine compares the collected metrics against pre-determined thresholds and selects the appropriate operating state. The system defines three states: Normal, Unstable, and High-Risk.
 
-\begin{table*}[t]
-\caption{SYSTEM MODULE MAP}
-\label{tab:module_map_sec6}
-\begin{center}
-\begin{tabular}{|l|p{10cm}|}
-\hline
-\textbf{Module} & \textbf{Role} \\
-\hline
-The main files are \texttt{server.c}, \texttt{client\_handler.c}, & which are responsible for accepting connections to the server, as well as maintaining per-client threads, and for routing messages to the appropriate clients. \\
-\hline
-The file \texttt{room\_manager.c} contains functions for handling room management, the file \texttt{auth\_manager.c} contains functions & for user list broadcast and RSA-2048 public-key verification. \\
-\hline
-\texttt{gtk\_client.c} & GTK3 login dialog, chat window, directed messaging, priority selector, on-line-users panel \\
-\hline
-This is for the \texttt{client.c}, \texttt{input\_handler.c}, \texttt{display.c} & CLI client, parsing of the @recipient or @all command, and printing to the terminal. \\
-\hline
-SEED state machine, AES-256-CBC encrypt/decrypt, RSA-2048 sign/verify, & Double Ratchet state machine, AES-256-CBC encrypt/decrypt, RSA-2048 sign/verify, HKDF \\
-\hline
-As TLS 1.3 context setup, wrap/unwrap are done for all TCP I/O, so the adjust-once memory is reused in subsequent I/Os. & For all TCP I/O, TLS 1.3 context setup, wrap/unwrap, adjust-once memory is reused in subsequent I/Os. \\
-\hline
-This is \texttt{adaptive\_engine.c} and \texttt{metrics\_collector.c}, & which constitute the three-state engine, 1-second evaluation tick, and aggregation of metrics. \\
-\hline
-loops for sending packets & via Dual-path TCP+UDP, disk-based offline queue, priority queue for three-level priority. \\
-\hline
-The \texttt{intrusion.c} & access counters for failed authentications per IP, IP block/unblock and replay events are new features. \\
-\hline
-This file & implements socket helpers, DNS resolution, and a receiver thread for UDP sockets. \\
-\hline
-\end{tabular}
-\end{center}
-\end{table*}
+\subsubsection{State Transition Logic}
+The engine transitions between execution modes according to the following rules.
 
-\subsubsection{1) State Transition Logic}
-The engine changes its state from one to another according to the logic it has defined.
-execution modes using network \& network security state indicators.
-
-\paragraph{a) HighRisk Escalation}
-The engine scales up to the next risk level as soon as it is reached.
-If any of the following conditions are, lates to High-Risk mode:
-met:
+\paragraph{a) High-Risk Escalation}
+The engine escalates immediately to High-Risk mode when any one of the following conditions is met:
 \begin{itemize}
-    \item The rolling packet loss rate (RPLR) is 100\% or higher for at least 10\% of the time.Rolling packet loss rate (RPLR) is 100\% or more for 10\% or more of time.
-    20\%.
-    \item The number of authentication failures that have been recorded.The total number of authentication failures.
-    The number of authentication failures (auth\_fail\_count) is 5 or greater.
-    \item The amount of times the replay has been detected.Total detected replays.
-    The number of re-play (replay\_count) increases to 3 or more.
+    \item Rolling packet loss rate (RPLR) is at or above 20\%.
+    \item Cumulative authentication failure count (\texttt{auth\_fail\_count}) reaches 5 or more.
+    \item Cumulative replay count (\texttt{replay\_count}) reaches 3 or more.
 \end{itemize}
 
 \paragraph{b) Unstable Transition}
-The system transitions from
-Switch the network to Normal to Unstable if network conditions deteriorate
-If the warning is not "High Risk":
+The engine transitions from Normal to Unstable when conditions degrade without reaching the High-Risk threshold:
 \begin{itemize}
-    \item There is a high level of rolling packet loss, >5\%.
-    \item This record of connection contains three or more socket-level timeouts.
+    \item Rolling packet loss rate exceeds 5\%.
+    \item Consecutive socket-level timeouts reach 3 or more.
 \end{itemize}
 
-\paragraph{c) Normal Mode and Hysteresis}
-To avoid fast, beep beep... repetition, the modes:To avoid fast repetition beep beep... the modes:
-Transitions between various cillatory states under borderlines, and
-The hysteresis mechanism is used in engine. The system will only
-After all monitored metrics are seen as "Normal", downgrade to "Normal".
-for at least three days in each of the four years has been consistently below their respective Unstable thresholds for a
-A 30-second uninterrupted time period.
+\paragraph{c) Normal Recovery and Hysteresis}
+To prevent rapid oscillation across state boundaries, the engine applies a hysteresis mechanism: a downgrade to Normal occurs only after all monitored metrics have remained consistently below their respective Unstable thresholds for a continuous 30-second window.
 
-When the server changes state it sends out an
-Sends a control frame to all connected clients that the engine is in a particular state.
-Updates the worldwide variable \texttt{EngineState}. The config-
-Changes for each of the states are given
-in Table II.
+On every state change, the server broadcasts a control frame to all connected clients and updates the global \texttt{EngineState} variable. The parameter changes associated with each state are listed in Table~\ref{tab:aprm}. Under degraded network conditions, the combination of smaller crypto chunk sizes and increased retry budgets yields substantially higher delivery rates on lossy links compared to the Normal-mode configuration.
 
-When network conditions are degraded, data transmission and reception from the same component is combined into smaller sizes.
-The newly added cryptographic chunk sizes and the new retry budgets sig-
-Proves to deliver much better delivery rates than lossy links.
-
-In High-Risk mode, some other defense mechanisms are
-enabled:
+In High-Risk mode, three additional defenses are activated simultaneously:
 \begin{itemize}
-    \item fixed size to ensure consistency.All message payloads are padded to a fixed size to ensure consistency --- Forced Padding.
-    the same-size uniform 4,096 bytes to prevent traffic analysis attacks.
-    hide length side-channels.
+    \item \textbf{Forced Padding}: All message payloads are padded to a uniform 4,096~bytes, preventing an observer from inferring message length from packet size.
+    \item \textbf{Randomized Retry Delay}: Retransmissions are delayed by a random interval of 100--500\,ms, making timing-based traffic analysis substantially harder.
+    \item \textbf{Aggressive DH Ratcheting}: The DH ratchet executes on every message (\texttt{dh\_ratchet\_freq}~=~1), maximizing forward secrecy and post-compromise recovery speed.
 \end{itemize}
 
 \begin{table*}[t]
-\caption{APRM is a new wind.APRM is a fresh wind.}
+\caption{Adaptive Parameter Reconfiguration Map (APRM)}
 \label{tab:aprm}
 \begin{center}
 \begin{tabular}{|l|c|c|c|}
 \hline
-The parameter is unstable in high risk areas. & Normal & Unstable & High-Risk \\
+\textbf{Parameter} & \textbf{Normal} & \textbf{Unstable} & \textbf{High-Risk} \\
 \hline
 Max Retries & 3 & 7 & 10 \\
 \hline
-Retry Delay & 100 ms & 200 ms & 300 ms \\
+Retry Delay & 100\,ms & 200\,ms & 300\,ms (+100--500\,ms random) \\
 \hline
-bitSums (based on Crypto Chunk Size): & 4096 bytes & 512 bytes & 256 bytes \\
+Crypto Chunk Size & 4096\,B & 512\,B & 256\,B \\
 \hline
-Description: & & & \\
+Forced Padding & Disabled & Disabled & Enabled (4096\,B) \\
 \hline
-Forced Padding = & Disabled & Disabled & = Enabled \\
-\hline
-It will be disabled if you don't use it on a regular basis.If you do not use it regularly, it will be disabled. & & & \\
-\hline
-DH Ratchet Frequency & 10 Messages & 10 Messages & Each Message \\
+DH Ratchet Frequency & Every 10 messages & Every 10 messages & Every message \\
 \hline
 \end{tabular}
 \end{center}
 \end{table*}
 
+\subsection{Intrusion Detection System}
+
+The server incorporates a lightweight, stateful intrusion-detection subsystem (IDS) designed to counter authentication brute-forcing and packet replay attacks. To avoid the overhead of dynamic allocation, the IDS uses a statically allocated tracking table bounded at \texttt{MAX\_BLOCKED\_IPS} entries, with operations optimized for constant-time per-packet lookup.
+
+Each record in the tracking table stores the following fields:
 \begin{itemize}
-    \item Randomized Timing Delay: Retries are retried at random times that are delayed.
-    ing the task with delays of 100--500 ms makes them more difficult.
-    ing timing-based attacks.
-    \item A Diffie-Hellman ratchet is known as aggressive DH Ratcheting.
-    Every message will go through the process of step, which is executed in order to get the maximum.
-    Provide forward secrecy and enhance post-compromise recovery.
+    \item Client IP address (stored as a string, up to 48 characters).
+    \item A counter recording the number of authentication failures from that address.
+    \item A boolean flag indicating whether the IP is currently blocked.
+    \item A timestamp recording when the block was applied.
 \end{itemize}
 
-\subsection{BIDS -- This is an Intrusion Detection System.BIDS -- Intrusion Detection System.}
-
-The server is designed to be light, yet has a stateful Intrusion De-
-to prevent authentication brute forcing via the TELNET protocol, a web-based file upload tool, and a protection system (IDS) that detects attempts to brute force authentication.
-packet replay attacks. To protect from lack of any resources
-The tracking was the target of and Denial-of-Service (DoS) attacks.
-In contrast, with statically allocated tracking, the IDS has a fixed set of objects it tracks, such as a subsystem.
-A table with a maximum of \texttt{MAX\_BLOCKED\_IPS} elements. The following are lookup operations in this
-Each table in table is optimized with a quick lookup technique that results in a minimum number of operations.
-per-packet processing overhead.
-
-The following were stored in each tracking record in the tracking table:
-\begin{itemize}
-    \item bytes) is a string of 48 bytes.The client IP address (stored as a string, maximum 48 bytes) is a string of up to 48 bytes.
-    characters).
-    \item A counter to count the number of times the authentication fails.
-    \item A flag that is either set to true or false to indicate the status of a block.
-    \item A time stamp that allows one to know when the IP block was created.
-\end{itemize}
-
-This IDS reveals two major reporting
-interfaces: \texttt{ids\_record\_auth\_fail()} and
-\texttt{ids\_record\_replay()}.
-
-If an authentication attempt fails (for example, if an invalid
-If the answer to the last question is yes, then RSA signature is received, or a client requests a username cur-
-Currently registered to another active session—they increment the IDS
-The error counter for the given IP. When this counter gets to 5, the
-following sequence occurs automatically:
+The IDS exposes two reporting interfaces: \texttt{ids\_record\_auth\_fail()} and \texttt{ids\_record\_replay()}. When an authentication attempt fails---for example, if an invalid RSA signature is received, or a client requests a username already bound to an active session---the IDS increments the failure counter for that IP. When the counter reaches~5, the following sequence executes automatically:
 \begin{enumerate}
-    \item IP address is placed on the blocked list of IP addresses.
-    The block time is recorded as the current epoch time in red.The current epoch time is recorded in red as
-    \item The block timestamp.
-    \item Records \texttt{metrics\_record\_auth\_fail()},
-    inducing a rapid up-regulation of adaptive state
-    Press the button to change from machine to High-Risk mode.
+    \item The IP address is added to the blocked list.
+    \item The current epoch time is recorded as the block timestamp.
+    \item \texttt{metrics\_record\_auth\_fail()} is called, triggering immediate escalation of the adaptive state machine to High-Risk mode.
 \end{enumerate}
 
-Replay attacks are dealt with in a similar fashion. If an incom-
-If a record is already in the database, then the ing message ID is the same as that of the record.
-If the message is classified, then the deduplication ring buffer is used.
-As an attempt of a replay. System automatically signals for when to invoke the system
-Write the adaptive to \texttt{metrics\_record\_replay()} to switch to
-Select engine to High-Risk mode.
+Replay attacks are handled analogously: if an incoming message ID is already present in the deduplication ring buffer, the event is classified as a replay attempt and \texttt{metrics\_record\_replay()} switches the engine to High-Risk mode. Blocked IPs are enforced inside the server's \texttt{accept()} loop---connections from blocked addresses are dropped before the TLS~1.3 handshake begins, conserving CPU cycles. Block expiry is handled lazily to avoid a dedicated timer thread: \texttt{ids\_expire\_blocks()} is called within the main server loop after each received message, and if the elapsed time since an IP's block timestamp exceeds 300~seconds (5~minutes), the block flag is cleared and the tracking record is reset.
 
-The security decisions are enforced by the server calling
-The server is using the idp which is blocked, during connect \texttt{accept()}
-loop. When blocked this means that the server immediately drops the IP address and that's that.
-the connection prior to starting TLS 1.3 handshake, saving,
-CPU cycles.
-
-To not have to dedicate a background timer for each item that you want to track.
-In the case of threads, the expiration is done as an afterthought. The function
-The function \texttt{ids\_expire\_blocks()} is called in the main call of the server.
-Loop after each one of the messages received.If the elapsed
-time since an IP’s block timestamp exceeds 300 seconds (5
-minutes), the block flag is cleared and the IP tracking record
-is reset.
-
-All blocking and unblocking actions are recorded in a
-dedicated IDS log file using the following format:
+All blocking and unblocking actions are written to a dedicated IDS log file in the following format:
 \begin{verbatim}
 [IDS 2026-06-10 14:23:01] BLOCK from 192.168.1.50
 [IDS 2026-06-10 14:28:01] UNBLOCK 192.168.1.50
@@ -694,124 +356,38 @@ dedicated IDS log file using the following format:
 % ============================================================
 %  SECTION VII — MULTIPATH TRANSPORT AND OFFLINE QUEUE  (Member 3)
 % ============================================================
-\section{Transferring message to multiple places and storing it offline. QUEUE}
+\section{Multipath Transport and Offline Queue}
 \label{sec:multipath_transport}
 
-\subsection{Scratch and Deduplication}
+\subsection{Dual-Path Delivery and Deduplication}
 
-To improve the transmission reliability in unstable and
-When the system is in adversarial network conditions, it adopts a si-Co-transport dual delivery approach. Every outgoing
-The message is sent by two different channels: primary
-Two TCPSocket objects, one of which is encrypted with TLS 1.3, and a second
-The redundant path delivery UDP datagram channel.
+To improve transmission reliability under unstable or adversarial network conditions, the system adopts a simultaneous dual-path delivery approach: every outgoing message is sent over a primary TLS~1.3-encrypted TCP socket and a redundant UDP datagram path in parallel. The client send loop respects the retry budget configured by the adaptive engine, encrypting each frame and transmitting it on the TLS socket while simultaneously dispatching the same ciphertext as a UDP datagram. In High-Risk mode, the engine interposes a random delay of 100--500\,ms between retransmission attempts to obstruct timing-based traffic analysis; Normal and Unstable modes maintain a fixed retry interval. Messages assigned Critical priority receive two additional retry attempts beyond the baseline limit to maximize delivery probability.
 
-The retry budget is adhered to for the client transmission loop.
-(configured by the adaptive engine) is the maximum number of times the adaptive engine will attempt to run the program. During
-The string being sent is encrypted by the "transmission", the sending thread.
-To the already active TLS socket and at the same time sends the same
-Copy to a UDP datagram. With the High Risk setting,
-the adaptive engine adds a random time delay of 100ms - 500ms
-The higher the number, the more difficult it will be to analyze traffic timing with the re-try.
-Of course, in both Normal and Unstable modes, the same retry interval is used.
-maintained. Messages with Critical priority automatically have it routed to the top of the queue.
-Be lucky enough to be granted two more attempts per retry, in addition to the
-baseline limit with max delivery probability.
-
-Since both channels are used for transmitting frames,
-receiver will expect to get duplicate packets. To prevent
-Prevent the sending of duplicate payloads to the application or user.
-The receiving pipeline takes advantage of the interface layers, which use a thread-safe
-deduplication mechanism. The receiver holds a circle in his hands.
-deduplication buffer defined as:
+Since both paths can deliver the same frame, the receiver must suppress duplicates. The receiving pipeline implements a thread-safe deduplication mechanism based on a circular buffer defined as:
 \begin{verbatim}
 dedup_buf[1024][16]
 \end{verbatim}
-This ring buffer can hold up to 1000 message ID's.
-(msg\_id). The receiver calls for the processing of the next frame
-Use \texttt{dedup\_check()} to do a lookup:
-If the message ID is included in the active deduplication, then the event log will display the following message:
-It is these issues that account for the fact that window is silently discarded.
-If the ID is not identified, its receiver appends the ID using
-\texttt{ring\_buf\_ptr)} to point at the next element in the ring buffer.\texttt{dedup\_add()}, increments ring buffer pointer (modulo
-Sends the payload to be decrypted (1024) and forwards.
-processing.
+This ring buffer holds up to 1,024 128-bit message IDs. On each incoming frame, the receiver calls \texttt{dedup\_check()}: if the message ID is already in the active window, the frame is silently dropped; otherwise \texttt{dedup\_add()} appends the ID (advancing the ring buffer pointer modulo 1,024) and forwards the payload for decryption. All deduplication operations are serialized through a \texttt{pthread\_mutex\_t}, and both lookup and insert run in constant time to avoid becoming a throughput bottleneck.
 
-Each of the deduplication operations is secured by a
-Prestart locking with \texttt{pthread\_mutex\_t} to make sure that it is thread safe, across
-concurrent reception paths. Look up and Insert routines
-Do not have to be deduplicated at the layer to which they're connected, as they need to operate in constant time.
-This is a measure to prevent from being a performance bottleneck.
+\subsection{Client-Side Priority Queue}
 
-\subsection{Priority Queue with ArrayB. Client-Side Priority Queue}
-
-In the client transmission pipeline a three level prior-
-A programmatic scheduling mechanism to control traffic going out of the network. Outgo-
-ing messages will be prioritised as one of three priority levels:
-First-Out (FIFO) order.Normal (Priority 0): Processed in the normal order of First-In, First-Out (FIFO).
-First-Out (FIFO) order.
+The client transmission pipeline incorporates a three-level priority scheduling mechanism for outgoing messages. Messages are classified into one of three priority levels:
 \begin{itemize}
-    \item Urgent (Priority 1): queued in front of Normal traffic
-    To reduce the propagation delay.
-    \item This category is reserved for the most important tasks, and will be scheduled first.
-    Increased priority and queued at the front of the queue.
+    \item \textbf{Normal (Priority~0)}: Processed in standard FIFO order.
+    \item \textbf{Urgent (Priority~1)}: Queued ahead of Normal traffic to reduce propagation delay.
+    \item \textbf{Critical (Priority~2)}: Assigned the highest scheduling priority and placed at the head of the queue.
 \end{itemize}
-On queuing a Critical message, the client calls
-Wait for trans- to be signalled/woken up by \texttt{pthread\_cond\_signal()}.
-If it's idle or blocked, it will be replaced by mission thread. Besides high-,
-The two queue scheduling policies are: priority queue and critical messages.
-Transmission attempts in multipath delivery loop (extra): The number of transmission attempts that have been made by the network in the multipath delivery loop.
-to help in propagation in degraded areas. Priority des-
-ignations are carried across network path through the
-\texttt{MsgHeader.priority} field.
+When a Critical message is enqueued, the client calls \texttt{pthread\_cond\_signal()} to wake the send thread immediately if it is idle or blocked. Critical messages also receive extra retry attempts in the multipath delivery loop. Priority designations are carried across the network via the \texttt{MsgHeader.priority} field.
 
-\subsection{A persistent Offline Message Queue.C. Persistent Offline Message Queue:}
+\subsection{Persistent Offline Message Queue}
 
-In the case of disconnected recipients, then it is an asynchronous delivery.If it's delivered to recipients who are not connected, it's asynchronous delivery.
-The server has an offline queue implemented in a persistent fashion on disk.
-mechanism. When the server client handler does not route a
-If the message is to be sent to an offline user, then the message is serialized and
-Sent to the user's queue directory at:
+When a message is addressed to a recipient who is not currently connected, the server provides asynchronous delivery through a persistent on-disk offline queue. The server's client handler serializes undeliverable messages to the recipient's queue directory at:
 \begin{verbatim}
 data/offline_queue/<username>/
 \end{verbatim}
-Before using any filesystem, the server checks to validate the
-An extremely strict regular expression against which username is matched.
-\begin{verbatim}
-[a-zA-Z0-9_-]
-\end{verbatim}
-It helps to prevent directory traversal attacks (for example, )
-Using path separators e.g. /..). The queues are organized in the following way:
-The message files are created with limited permissions -- mode
-0700 is for directories and 0600 is for files---enforce operating.
-system-level access control.
+Before any filesystem access, the server validates the username against a strict regular expression (\texttt{[a-zA-Z0-9\_-]}) to prevent directory traversal attacks through embedded path separators such as \texttt{/../}. Directories are created with mode 0700 and message files with mode 0600, enforcing OS-level access control. Individual messages are saved as files named \texttt{<timestamp\_ms>\_<msg\_id\_hex>}; the timestamp-based naming allows the server to read the queue in lexicographical order on reconnection, preserving chronological message ordering.
 
-When messages are saved, they are saved as individual files with names of the messages.
-pattern:
-\begin{verbatim}
-<timestamp_ms>_<msg_id_hex>
-\end{verbatim}
-This naming is required for the server to be able to read the queue.
-When a client reconnects, it will get the files in lexicographical order, pre-
-Providing a logical order of the messages.
-
-One of the important design decisions was to save offline messages in the following manner:
-Using plaintext not ciphertext on the server. Because the
-recipient's next state at queuing time is not known
-time, encrypting with the current state of the ratchet.
-would cause synchronisation problems (ratchet desynchronisation)
-When reconnected again (after a couple of seconds), the message turns into gibberish (see above).
-Messages are instead secured on disk by using access to the OS level.
-Control permissions and encrypted with the recipient's new
-ratchet state gives state that is set on re-connection.
-
-When messages are replayed from the offline file they are sent to the
-Each client delivers as normal \texttt{MSG\_CHAT} frames, the
-The header has the \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} flag set.
-The flag is used in the client UI to show a [queued] indicator,
-The ability to differentiate replayed traffic from live traffic. To prevent
-By default, offline queues are limited to 500 messages, but this limit can be changed.The limit for offline queues is 500 messages by default, but this can be altered.
-While subsequent incoming messages can be put on the queue, they are limited to per user (\texttt{OFFLINE\_QUEUE\_MAX}).
-If a message is waiting in FIFO queue, then messages sent to the FIFO queue are discarded.
+A deliberate design decision was made to store offline messages as plaintext rather than ciphertext on the server. Because the recipient's ratchet state at queuing time is unknown until the moment of reconnection, pre-encrypting with the current ratchet state would cause synchronization problems and render the queued messages undecryptable on reconnect. Messages are instead protected at rest by OS-level access control permissions, and re-encrypted under the recipient's live ratchet state at the time of delivery. When replayed, these frames carry the \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} flag, allowing the client UI to display a \texttt{[queued]} indicator and distinguish replayed traffic from live traffic. The offline queue is capped at \texttt{OFFLINE\_QUEUE\_MAX}~=~500 messages per user; messages arriving after this limit is reached are discarded.
 
 % ============================================================
 %  SECTION VIII — EVALUATION  (Member 3)
@@ -819,39 +395,39 @@ If a message is waiting in FIFO queue, then messages sent to the FIFO queue are 
 \section{Evaluation}
 \label{sec:evaluation}
 
-This section details the empirical evaluation of the proposed system, focusing on cryptographic strength, multi-path transport resilience, and the responsiveness of the adaptive security engine.
+This section details the empirical evaluation of the proposed system, focusing on cryptographic correctness, multi-path transport resilience, and the responsiveness of the adaptive security engine.
 
 \subsection{Experimental Setup}
 
-Experiments were carried out in a containerized environment which replicated multiple real clients and a server. Network degradation (packet loss) was injected on the client-server loopback interface using the Linux Traffic Control (\texttt{tc}) utility combined with the network emulation module (\texttt{netem}). Security-related metrics were triggered by script-driven authentication brute-force and packet replay injectors.
+Experiments were conducted in a containerized environment replicating multiple real clients and a server. Network degradation was injected on the client-server loopback interface using the Linux Traffic Control (\texttt{tc}) utility combined with the \texttt{netem} network emulation module. Security-related events were triggered by script-driven authentication brute-force and packet replay injectors.
 
 \subsection{Cryptographic and Functional Verification}
 
 The cryptographic properties described in Section~V were tested empirically under standard operating conditions:
 \begin{itemize}
-    \item \textbf{Key Uniqueness \& Integrity:} All derived symmetric keys were verified as unique when evaluated over 100 sequentially generated message keys. A round-trip test using AES-256-CBC successfully recovered the exact plaintexts in all cases.
-    \item \textbf{Forward Secrecy:} The client-side active ratchet state was deleted at message 50. Subsequent attempts to decrypt historical messages (1--49) were unsuccessful, validating that compromised keys do not expose past traffic.
-    \item \textbf{Post-Compromise Security (Break-in Recovery):} To simulate key compromise, the symmetric chain key was exposed at message 50. Following the next Diffie-Hellman ratchet exchange (occurring every 10 messages in Normal mode and every message in High-Risk mode), the attacker was unable to decrypt subsequent messages, verifying break-in recovery.
-    \item \textbf{Traffic Analysis Mitigation:} Packet captures via \texttt{tcpdump} in High-Risk mode confirmed that the size of the \texttt{MSG\_CHAT} payload was consistently 4,112 bytes (16-byte IV + 4,096-byte ciphertext), regardless of the actual message content.
+    \item \textbf{Key Uniqueness \& Integrity:} All derived symmetric keys were verified as unique across 100 sequentially generated message keys. A round-trip test using AES-256-CBC successfully recovered the exact plaintexts in every case.
+    \item \textbf{Forward Secrecy:} The client-side active ratchet state was deleted at message~50. Subsequent attempts to decrypt historical messages (1--49) failed in all cases, confirming that compromised state does not expose past traffic.
+    \item \textbf{Post-Compromise Security (Break-in Recovery):} To simulate key compromise, the symmetric chain key was exposed at message~50. Following the next DH ratchet exchange---every 10 messages in Normal mode and every message in High-Risk mode---the attacker was unable to decrypt subsequent messages, verifying break-in recovery.
+    \item \textbf{Traffic Analysis Mitigation:} Packet captures via \texttt{tcpdump} in High-Risk mode confirmed that the \texttt{MSG\_CHAT} payload was consistently 4,112~bytes (16-byte IV + 4,096-byte ciphertext) regardless of actual message content.
 \end{itemize}
 
 \subsection{IDS Metrics and Adaptive Engine}
 
-The adaptive engine's transitions and operational parameters under various conditions were verified:
+The adaptive engine's transitions and operational parameters were verified across the following conditions:
 \begin{itemize}
-    \item \textbf{Packet Loss ($\ge$ 5\%):} Prompts the system to transition from Normal to Unstable Mode. (Status: Pass)
-    \item \textbf{Packet Loss ($\ge$ 20\%):} Prompts the system to transition from Unstable to High-Risk Mode. (Status: Pass)
-    \item \textbf{Authentication Failures ($\ge$ 5 from the same IP):} Prompts an immediate transition from any state to High-Risk Mode. (Status: Pass)
-    \item \textbf{Replay Attacks ($\ge$ 3 Detections):} Prompts an immediate transition from any state to High-Risk Mode. (Status: Pass)
-    \item \textbf{Metrics Stability ($\le$ 30 seconds):} Triggers a transition back to Normal Mode. (Status: Pass)
+    \item \textbf{Packet Loss ($\ge$ 5\%):} Prompts a transition from Normal to Unstable mode. (Status: Pass)
+    \item \textbf{Packet Loss ($\ge$ 20\%):} Prompts a transition from Unstable to High-Risk mode. (Status: Pass)
+    \item \textbf{Authentication Failures ($\ge$ 5 from the same IP):} Triggers an immediate transition from any state to High-Risk mode. (Status: Pass)
+    \item \textbf{Replay Attacks ($\ge$ 3 detections):} Triggers an immediate transition from any state to High-Risk mode. (Status: Pass)
+    \item \textbf{Metrics Stability ($\ge$ 30 seconds below Unstable thresholds):} Triggers a downgrade to Normal mode. (Status: Pass)
 \end{itemize}
 
 \subsection{Other System Behaviors}
 
 \begin{itemize}
-    \item \textbf{Multi-Path Deduplication:} Under packet loss injection, identical messages were received on both the TLS/TCP and UDP paths. The 1024-entry ring buffer correctly identified and eliminated duplicates, delivering the unique message to the application layer exactly once.
-    \item \textbf{Intrusion Blocking:} Exceeding five authentication failures from a single IP prompted the IDS to blackhole the host. Subsequent connection attempts were dropped before initiating the TLS handshake, conserving CPU cycles.
-    \item \textbf{Offline Replay:} Messages sent to disconnected users were queued on disk in chronological order. Upon client reconnection, the server re-encrypted and transmitted the queued payload with the \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} flag set. The client successfully reconstructed the chat logs chronologically.
+    \item \textbf{Multi-Path Deduplication:} Under packet loss injection, identical messages were received on both the TLS/TCP and UDP paths. The 1,024-entry ring buffer correctly identified and suppressed all duplicates, delivering each unique message to the application layer exactly once.
+    \item \textbf{Intrusion Blocking:} Exceeding five authentication failures from a single IP caused the IDS to blackhole that host. All subsequent connection attempts were dropped before the TLS handshake, conserving CPU cycles as expected.
+    \item \textbf{Offline Replay:} Messages sent to disconnected users were queued on disk in chronological order. Upon client reconnection, the server re-encrypted and delivered the queued frames with the \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} flag set, and the client reconstructed the chat history in the correct sequence.
 \end{itemize}
 
 % ============================================================
@@ -859,221 +435,57 @@ The adaptive engine's transitions and operational parameters under various condi
 % ============================================================
 \section{Limitations and Future Work}
 
-Though the proposed system shows an extensive and efficient,
-Secure communications architecture, including several layers of
-While cryptographic protection is available, there are a number of architectural limitations that remain,
-warrants clear discussion, further investigation and systematic action
-future enhancement.
+While the proposed system presents a comprehensive layered security architecture, several limitations in the current design warrant clear discussion and systematic future attention.
 
-\subsection{Trusted Server Relay and Absence of Strict End-to-End Encryption}
+\subsection{Trusted Server Relay and the Limits of End-to-End Encryption}
 
-The greatest disadvantage of the present design is that it cannot be
-Trusted server relay for message forwarding.
-When a message is received by the server, as described in Section IV-E,
-It is completely decrypted with the sender's Double Ratchet receive context,
-To get the desired recipient identifier contained in the
-plaintext payload.  The recovered plaintext is subsequently re-encrypted with the same key and uses the same algorithm.
-Send-ratchet recipient's context before forwarding.  This server-visible
-In the present architecture, the decryption step is architecturally necessary in the current, Since the present architecture requires the decryption step to,
-recipient-resolution design, the system is unable to reach the strictness.
-Semantics of end-to-end encryption (E2EE) in the academic sense,
-As the server processes the content of the plaintext messages temporarily.
-
-This is a deliberate design compromise made; it significantly
-simplifies the implementation of offline message queuing, adaptive priority, delivery, etc. eases offline message queuing, adaptive priority, delivery, etc., implementation.
-There is server-side routing logic and management as well as frontend management.  But, it is a
-Quitting the security model provided by fully E2EE systems like
-Signal, where only anonymous ciphertexts are processed on the server.  A
-An aggressive user who has been able to break into the server's infrastructure
-Would then be able to access the message plaintexts for the short time that they are being forwarded.
-window.
-
-In future investigation, some pre-key distribution architecture should be investigated.
-This one is where recipients post signed pre-keys to the server, by using Diffie–Hellman.
-in advance.  Senders can then encrypt directly to the pre-key of the recipient
-Without needing to decrypt server-side.  Techniques such as those
-The Signal Protocol's sealed-sender and pre-key bundle are used by this.
-The mechanisms are advanced reference designs that enable this characteristic.
+The most significant architectural limitation is the system's reliance on a trusted server relay for message forwarding. As described in Section~IV, the server fully decrypts each incoming message using the sender's Double Ratchet receive context in order to extract the intended recipient identifier from the plaintext payload, then re-encrypts the recovered plaintext under the recipient's send-ratchet context before forwarding. This server-visible decryption step is architecturally required by the current recipient-resolution design, and it means the system does not achieve strict end-to-end encryption semantics in the academic sense: the server briefly handles message plaintext. This is a deliberate design compromise that substantially simplifies offline message queuing, adaptive priority routing, and server-side session management, but it represents a clear departure from the security model offered by fully end-to-end encrypted systems such as Signal, where the server handles only opaque ciphertexts. An adversary who compromises the server infrastructure would have brief access to message plaintexts during the forwarding window. Future work should evaluate a pre-key distribution architecture in which recipients post signed pre-keys to the server in advance, allowing senders to encrypt directly to the recipient's pre-key without any server-side decryption. The X3DH key agreement protocol \cite{b6} and Signal's sealed-sender mechanism are well-defined reference designs for this capability.
 
 \subsection{Offline Message Storage Security}
 
-One limitation is the off-line message storage.
-Messages that can't be sent right now due to the recipient being out of the way.
-offline are stored in plain text in the persistent offline of the server.
-Handle Queue as in Section IV-F.  Though the current design is applied to
-Using access controls and retention policies to reduce exposure risk, and
-If there is no at rest encryption a successful compromise of the data will result in the loss of information.
-This can be achieved by either logical access control or server's storage infrastructure.
-Failure, physical media theft, or backup interception — could create the possibility of exposing the
-All queued messages.
-
-For future design, the offline queued messages should be encrypted.
-Generating recipient derived keying material, so that only the recipient can use the same material for encryption or decryption,
-After reconnecting, has key to decrypt the queued
-content.  When combined with pre-key, the following conditions are met:
-distribution would make no server side plaintext exposure possible for
-the offline delivery route.
+The offline message queue currently stores messages as plaintext on the server's persistent storage. While OS-level access control permissions and a per-user retention cap reduce exposure risk, the absence of at-rest encryption means that a successful compromise of the server's storage infrastructure---through access control failure, physical media theft, or backup interception---could expose all queued messages. Future designs should encrypt offline queued messages using recipient-derived keying material so that only the recipient, upon reconnecting, holds the key needed to decrypt the queued content. Combining this approach with X3DH pre-key distribution would eliminate any server-side plaintext exposure on the offline delivery path.
 
 \subsection{Identity Management and Public-Key Infrastructure}
 
-A new IDM framework is being designed to be light and
-In a controlled, closed-membership deployment environment is well-suited to.
-where everyone is familiar with everyone and there is trust distributed
-centrally.  A public key with an RSA private key is self-asserted by each user at registration.
-Furthermore, there is no certificate authority, revocation mechanism, and no authentication time.
-A web-of-trust infrastructure is in place.
-
-For deployments of large scale or open memberships, the model has a considerable size.
-limitations.  Without public-key infrastructure (PKI) there is
-No way to be certain of a public key presented during authentication.
-is truly a member of the claimed identity, and thus is susceptible to being victimized by it.
-Long Term Adversarial Impersonation (LTAI): long-term registration of a malicious key by an adversary.
-under a victim's username.  Further, there is no key-revocation
-“Mechanism” implies that it is not possible to invalidate a compromised identity key without.
-out-of-band coordination.
-
-Future work should evaluate certificate-based trust models, decentralised
-Such as key-transparency logs similar to identity verification mechanisms.
-A few of those who are already using the CONIKS and Key Transparency systems and automated.
-key-management infrastructures that can support the wider.
-Requirements for general purpose deployments: interoperability and revocations.
-
+The current identity framework is well-suited to small, controlled deployments where membership is known and trust can be administered centrally. Each user self-asserts an RSA public key at registration with no certificate authority, revocation mechanism, or web-of-trust infrastructure. For large-scale or open-membership deployments this model has notable limitations: without a PKI there is no assurance that a presented public key belongs to the claimed identity, leaving the system vulnerable to long-term adversarial impersonation. The absence of key revocation further means that a compromised identity key cannot be invalidated without out-of-band coordination. Future work should evaluate certificate-based trust models, decentralized key-transparency logs, and key-management infrastructures sufficient for broader interoperability and revocation requirements.
 
 \subsection{Scalability and Group Communication}
 
-The architecture at the moment is intended only for the communication between pairs
-Pairing of users' sessions.  This model works well for,
-It does not come with a built-in support for group in small and medium-sized deployments.
-secured delivery of one plain text message into a secure delivery scenario for messaging.
-Sent to several people at once.
-
-By a simple extension of the existing design, in which the sender, one by one,
-works linearly with each group member — scales linearly in both
-OPT overhead and bandwidth usage increase in proportion to group size, grows with the number of groups.
-Too difficult to do for groups of people.  Explicit group key management protocols,
-The IETF has developed a standard, such as the Message Layer Security (MLS) protocol
-Use key structures with trees in RFC 9420, which minimise the per-message overhead.
-The overhead for group operations to be reduced to O(log n) for the n people in the group.
-Future research should seek to assess integration of MLS or equivalent group-
-The ratchet designs are being used to connect to the existing structure. The ratchet elements are being integrated into the existing building fabric.
+The current architecture supports only pairwise directed messaging: the server iterates over group members individually, causing both processing overhead and bandwidth to scale linearly with group size. Explicit group key management protocols with sublinear complexity---such as the MLS protocol \cite{b5} (RFC~9420), whose tree-based key structures reduce per-message overhead to O(log~$n$)---should be evaluated as extensions to the existing architecture.
 
 \subsection{Adaptive Security Mechanisms and Threat Intelligence}
 
-The present adaptive security system activates DH ratchet updates and
-relative hierarchy of priority based on simple heuristic
-Indications like connection anomalies and rate deviations of messages.  While
-This method of threat response does not include the incorporation of this as an effective methodology.
-There are more rich sources of contextual intelligence in modern deployed systems
-environments.
-
-Advanced adaptive security mechanisms should be investigated in the future.
-Able to include behavioural analytics, peer-reputation scoring,
-A mix of context-aware information based on network telemetry and machine-learning-augmented information.
-assisted threat-classification models.  These improvements may allow for a greater number of
-Smart and on-the-spot security adaptation, and at the same time cutting down on the
-incorrectly escalated cryptographic costs
-Impacts on legitimate users.
+The current adaptive engine responds to simple heuristic signals such as packet loss rates and authentication anomaly counts. It does not incorporate richer contextual intelligence available in modern deployments. Future work should investigate behavioral analytics, peer-reputation scoring, and machine-learning-augmented threat classification to enable more precise security adaptation while reducing false escalations that impose unnecessary cryptographic overhead on legitimate users.
 
 \subsection{Formal Verification}
 
-The security analysis is currently carried out at design and architecture level.
-level.  There is no formal security property verification of the protocol.
-tried with symbolic model checkers like ProVerif or Tamarin, or
-computational proof frameworks.  Formal verification is a known
-Provides best practice for cryptographic protocols and is becoming more common in the requirements of
-Standards organizations for protocols that are targeted for high assurance deployments.
-Future work should aim at formally modelling and mechanising the key.
-security properties guaranteed by the protocol such as forward secrecy,
-break-in recovery, and authentication soundness.
-
-\subsection{Summary}
-
-Overall the proposed system brings together key components to create a unified communication framework.
-These components include TLS 1.3 RSA-2048 digital signature authentication, X25519 Diffie-Hellman key exchange,
-HKDF-SHA256 key derivation and the Ratchet key evolution algorithm.
-The system also uses AES-256-CBC for message encryption adds constant-size traffic padding
-and includes offline message queuing.
-It uses 128-bit message identifiers for deduplication.
-The system has a security management feature.
-Some limitations were identified. They are trade-offs that come with the current design.
-They are not problems with the architecture.
-
-Future research will focus on areas.
-One area is pre-key distribution to eliminate server-side plaintext visibility.
-Another area is securing message storage.
-The research will also look at strengthening the identity management infrastructure.
-The goal is to extend the architecture to support group communication using MLS.
-The adaptive security subsystem will be improved with machine-learning-assisted threat intelligence.
-Formal verification of the core protocol properties is also a priority.
-This will ensure the security guarantees needed for production deployment, in sensitive communication environments.
-
-The proposed system integrates these components into a framework.
-The system uses TLS 1.3 for communication.
-The Double Ratchet algorithm helps evolve keys.
-The system uses AES-256-CBC for encryption.
-It also uses HKDF-SHA256 for derivation.
-The system has security management.
-It uses Diffie-Hellman key exchange.
-The system has offline message queuing.
-It uses 128-bit message identifiers.
-The system has constant-size traffic padding.
-The proposed system is designed to provide communication.
-The system uses RSA-2048 signature authentication.
+Security analysis in this work is conducted at the design and architecture level; the protocol has not been verified against formal security properties using symbolic model checkers such as ProVerif or Tamarin, nor against computational proof frameworks. Formal verification is considered best practice for cryptographic protocols and is increasingly required by standards bodies for high-assurance deployments. Future work should formally model and mechanize the key security properties guaranteed by the protocol, including forward secrecy, break-in recovery, and authentication soundness.
 
 % ============================================================
 %  SECTION X — CONCLUSION  (Member 1)
 % ============================================================
 \section{Conclusion}
 
-The central premise of this work is that cryptographic and transport configuration
-should be a function of measured operating conditions rather than a fixed property of
-the deployment. The system described here demonstrates one concrete realization of that
-premise: a three-state adaptive engine that reads both network quality metrics and
-IDS-detected security events, and immediately propagates mode changes to every module
-that touches encryption or delivery. Under High-Risk conditions, an adversary who has
-triggered the escalation—whether through replay injection or authentication probing—
-finds the surviving sessions simultaneously rotating Diffie--Hellman keys on every
-message, hiding plaintext length behind uniform-size ciphertext, and interleaving
-randomized delays into the retry schedule, all without requiring any operator
-intervention.
+The central premise of this work is that cryptographic and transport configuration should be a function of measured operating conditions rather than a fixed property of the deployment. The system described here demonstrates one concrete realization of that premise: a three-state adaptive engine that reads both network quality metrics and IDS-detected security events, and immediately propagates mode changes to every module that touches encryption or delivery. Under High-Risk conditions, an adversary who has triggered the escalation---whether through replay injection or authentication probing---finds the surviving sessions simultaneously rotating Diffie--Hellman keys on every message, hiding plaintext length behind uniform-size ciphertext, and interleaving randomized delays into the retry schedule, all without requiring any operator intervention.
 
-Experimental evaluation confirms that state transitions occur at the specified
-thresholds and that the thirty-second hysteresis window prevents premature downgrade
-under borderline loss rates. Ratchet forward secrecy and break-in recovery are verified
-empirically, and constant-payload-size enforcement is confirmed at the packet capture
-level. All thirteen functional tests pass.
+Experimental evaluation confirms that state transitions occur at the specified thresholds and that the thirty-second hysteresis window prevents premature downgrade under borderline loss rates. Ratchet forward secrecy and break-in recovery are verified empirically, and constant-payload-size enforcement is confirmed at the packet capture level. All thirteen functional tests pass.
 
-The most significant architectural limitation—that the server decrypts each message in
-memory to perform routing and re-encryption, making it a trusted relay—remains open.
-Addressing it requires adopting X3DH pre-key exchange~\cite{b6} so that the server
-forwards encrypted blobs without ever seeing plaintext. Extending the broadcast
-mechanism from per-client encryption loops to a proper group ratchet along the lines
-of MLS~\cite{b5} is the second near-term priority. Both directions are well-defined
-and build directly on the cryptographic infrastructure already in place.
+The most significant architectural limitation---that the server decrypts each message in memory to perform routing and re-encryption, making it a trusted relay---remains open. Addressing it requires adopting X3DH pre-key exchange~\cite{b6} so that the server forwards encrypted blobs without ever seeing plaintext. Extending the broadcast mechanism from per-client encryption loops to a proper group ratchet along the lines of MLS~\cite{b5} is the second near-term priority. Both directions are well-defined and build directly on the cryptographic infrastructure already in place.
 
 \section*{Acknowledgment}
 
 \begin{thebibliography}{00}
-\bibitem{b1} M. Marlinspike and T. Perrin, ``The Double Ratchet Algorithm,''
-    Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/doubleratchet/
+\bibitem{b1} M. Marlinspike and T. Perrin, ``The Double Ratchet Algorithm,'' Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/doubleratchet/
 
-\bibitem{b2} K. Cohn-Gordon, C. Cremers, B. Dowling, L. Garratt, and D. Stebila,
-    ``A Formal Security Analysis of the Signal Messaging Protocol,''
-    in \textit{Proc. IEEE European Symposium on Security and Privacy (EuroS\&P)},
-    Paris, France, 2017, pp. 451--466.
+\bibitem{b2} K. Cohn-Gordon, C. Cremers, B. Dowling, L. Garratt, and D. Stebila, ``A Formal Security Analysis of the Signal Messaging Protocol,'' in \textit{Proc. IEEE European Symposium on Security and Privacy (EuroS\&P)}, Paris, France, 2017, pp. 451--466.
 
-\bibitem{b3} E. Rescorla, ``The Transport Layer Security (TLS) Protocol Version 1.3,''
-    IETF RFC 8446, Aug. 2018.
+\bibitem{b3} E. Rescorla, ``The Transport Layer Security (TLS) Protocol Version 1.3,'' IETF RFC 8446, Aug. 2018.
 
-\bibitem{b4} H. Krawczyk and P. Eronen, ``HMAC-based Extract-and-Expand Key
-    Derivation Function (HKDF),'' IETF RFC 5869, May 2010.
+\bibitem{b4} H. Krawczyk and P. Eronen, ``HMAC-based Extract-and-Expand Key Derivation Function (HKDF),'' IETF RFC 5869, May 2010.
 
-\bibitem{b5} R. Barnes, B. Beurdouche, R. Robert, J. Millican, E. Omara, and K. Cohn-Gordon,
-    ``The Messaging Layer Security (MLS) Protocol,''
-    IETF RFC 9420, Jul. 2023.
+\bibitem{b5} R. Barnes, B. Beurdouche, R. Robert, J. Millican, E. Omara, and K. Cohn-Gordon, ``The Messaging Layer Security (MLS) Protocol,'' IETF RFC 9420, Jul. 2023.
 
-\bibitem{b6} M. Marlinspike and T. Perrin, ``The X3DH Key Agreement Protocol,''
-    Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/x3dh/
+\bibitem{b6} M. Marlinspike and T. Perrin, ``The X3DH Key Agreement Protocol,'' Signal Foundation, 2016. [Online]. Available: https://signal.org/docs/specifications/x3dh/
 \end{thebibliography}
 
 \end{document}
