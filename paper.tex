@@ -181,7 +181,14 @@ The networking and cryptographic modules are identical in both client implementa
 Once the authentication is done, every client will execute two threads. The send thread removes messages from a three-level priority queue in priority order, generates the next message key based on the current ratchet, encrypts the padded plaintext using that key and sends the frame simultaneously using TLS/TCP and UDP. The receive thread consumes the message from the TLS socket, verifies the message ID against the local deduplication ring buffer, decrypts the payload and passes it to the UI layer. In the GTK client, the delivery is placed on the main loop using \texttt{gdk\_threads\_add\_idle()}, ensuring that all the mutations of widgets are done on the UI thread; in the CLI client, the receive thread directly writes to the standard output.
 
 \subsection{Architecture Overview}
-Fig.~\ref{fig:arch} illustrates the two-tier architecture and the primary data flows.
+Fig.~\ref{fig:arch} illustrates the two-tier architecture and the primary data flows. Fig.~\ref{fig:connflow} shows the complete connection and authentication lifecycle, from the initial TCP connection through TLS handshake, Double Ratchet initialisation, and message delivery, including the offline queue path for disconnected recipients.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{1.png}
+\caption{Connection and authentication lifecycle. The flow covers TCP connection establishment, TLS~1.3 handshake, X25519 DH key exchange, RSA-2048 identity authentication, session setup, and message routing---including the offline storage path when the recipient is unavailable.}
+\label{fig:connflow}
+\end{figure}
 
 \subsection{Module Overview}
 Table~\ref{tab:modules} summarizes the main source modules and their roles.
@@ -225,7 +232,14 @@ Table~\ref{tab:modules} summarizes the main source modules and their roles.
 
 \subsection{Packet Framing and Header Structure}
 
-Each message has a common 28-byte binary header, including a 128-bit \texttt{msg\_id} field for deduplication on both the TCP and UDP delivery paths. All payload messages sent via \texttt{MSG\_CHAT} in the High-Risk mode will be padded so that the total encrypted payload frame is a pre-determined 4,112~bytes: 16~bytes IV (4-byte nonce prefix preceded by 12-byte nonce). This common size of the frame defeats traffic-analysis attacks based on the observation of the packet size to determine the message content or length.
+Each message has a common 28-byte binary header, including a 128-bit \texttt{msg\_id} field for deduplication on both the TCP and UDP delivery paths. All payload messages sent via \texttt{MSG\_CHAT} in the High-Risk mode will be padded so that the total encrypted payload frame is a pre-determined 4,112~bytes: 16~bytes IV (4-byte nonce prefix preceded by 12-byte nonce). This common size of the frame defeats traffic-analysis attacks based on the observation of the packet size to determine the message content or length. The full header layout is shown in Fig.~\ref{fig:header}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.75\columnwidth]{2.png}
+\caption{Secure Chat Protocol header (28~bytes). The \texttt{msg\_id} field enables cross-path deduplication; \texttt{flags} carries control bits such as \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY}; \texttt{checksum} detects header corruption.}
+\label{fig:header}
+\end{figure}
 
 % ============================================================
 %  SECTION V — CRYPTOGRAPHIC DESIGN  (Member 2)
@@ -387,15 +401,22 @@ The client transmission pipeline consists of a three level priority scheduling m
 \end{itemize}
 When a Critical message is enqueued, the client calls \texttt{pthread\_cond\_signal()} to wake the send thread immediately if it is idle or blocked. Critical messages also receive extra retry attempts in the multipath delivery loop. Priority designations are carried across the network via the \texttt{MsgHeader.priority} field.
 
-\subsection{Persistent Offline Message Queue} %Here
+\subsection{Persistent Offline Message Queue}
 
-If a message is sent to someone who is not on-line, the server delivers the message asynchronously through a persistent, on-disk, offline queue. The server's client handler makes the following undeliverable messages to the recipient's queue directory:
+If a message is sent to someone who is not on-line, the server delivers the message asynchronously through a persistent, on-disk, offline queue. The end-to-end flow for directed message delivery---including the offline storage and replay path---is shown in Fig.~\ref{fig:msgflow}. The server's client handler makes the following undeliverable messages to the recipient's queue directory:
 \begin{verbatim}
 data/offline_queue/<username>/
 \end{verbatim}
 The server runs a tight regular expression (\texttt{[a-zA-Z0-9\-]}) to check the username before accessing any filesystem, to avoid directory traversal attacks involving embedded path separators like \texttt{/../}. Directories are opened with the permission of 0700 and message files with the permission of 0600, thus enforcing access control at the OS-level. Each message goes into a file named \texttt{<timestamp\_ms>\_<msg\_id\_hex>} and the queue is read in lexicographical order on reconnection, thus maintaining the chronological ordering of the messages.
 
 It was decided that the messages will not be ciphertexts on the server but will be stored as plain text. If the pre-encrypted messages were encrypted with the current ratchet state of the recipient, then the recipient's ratchet state at the time of the queuing would not be known until reconnection, which would lead to problems with synchronization and make the queued messages unreadable on reconnection. Messages are instead protected at rest by OS-level access control permissions, and re-encrypted under the recipient's live ratchet state at the time of delivery. These frames are flagged as \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} and replayed frames are distinguished from live frames on the client UI by displaying an indicator that the frame has been queued for replay. There is an offline queue of maximum \texttt{OFFLINE\_QUEUE\_MAX}~=~500 messages per user, and once this limit is reached the extra messages are dropped.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{3.png}
+\caption{Directed secure message delivery flow. When the recipient is online the server decrypts, re-encrypts under the recipient's ratchet state, and forwards via TCP (primary) and UDP (backup). When the recipient is offline, plaintext is stored in the per-user queue directory and re-encrypted for delivery on reconnection.}
+\label{fig:msgflow}
+\end{figure}
 
 % ============================================================
 %  SECTION VIII — EVALUATION  (Member 3)
