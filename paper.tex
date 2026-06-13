@@ -473,158 +473,345 @@ All important data is purged using \texttt{OPENSSL\_cleanse()} immediately after
 
 \subsection{Three-State Adaptive Engine}
 
-A dynamic adaptation mechanism continually adjusts system behavior to prevailing network conditions and security events, ensuring both communication reliability and confidentiality. Rather than relying on a static, design-time configuration, the system dynamically alters transport and cryptographic properties at runtime based on real-time observations. The core of this framework is a background daemon thread running on the server that evaluates telemetry and security metrics once per second. During each evaluation cycle, the engine collects and aggregates telemetry data from all active client sessions into a shared \texttt{Metrics} structure.
+A continually changing adaptation mechanism constantly adapts sys-
+Implements network behavior changes as it sees fit and as per network security policies
+Events are guaranteed to be communicated reliably and information is not lost, as events are guaranteed to be received.
+tiality. Instead of simply taking a one-time configuration, the design-time options are converted to a dynamically loaded configuration at runtime.
+It dynamically changes transport and cryptographic functions at the same time, in order to
+The ability to observe the properties at runtime and make use of that information. The core
+One such thread is a background daemon thread that runs of this framework.
+Once a week, the server that processes the telemetry and security data.
+per second. Each time the engine does a cycle of evaluations, it gathers
+and collects all active client sessions' telemetry data.
+Converted to a common Metrics structure.
 
-The following parameters are continuously monitored and updated:
+Other parameters are continuously monitored as follows:
+updated:
 \begin{itemize}
-    \item \texttt{packet\_loss\_rate}: A rolling weighted average of packet loss calculated over the last 100 transmissions.
-    \item \texttt{rtt\_ms}: The smoothed round-trip time, calculated using an Exponentially Weighted Moving Average (EWMA).
-    \item \texttt{auth\_fail\_count}: A counter monitoring failed authentication attempts to detect unauthorized access or brute-force activities.
-    \item \texttt{replay\_count}: The cumulative count of duplicate message replays detected during execution.
-    \item \texttt{consecutive\_timeouts}: The consecutive socket-level timeout occurrences recorded for active transactions.
+    \item A weighted average of \texttt{packet\_loss\_rate} over a rolling period of time:
+    The percentage of packets that were lost in the past 100 packets sent.
+    \item The smoothed round-trip time (\texttt{rtt\_ms}): Computed from the following:
+    An Exponentially Weighted Moving Average (EWMA).
+    \item thentication attempts that has been incremented by the failed logon attempt.
+    Attempts to detect unauthorised access to it, thentication aims to
+    brute-force activities.
+    \item In the comments, you can find the \texttt{replay\_count:} field, which is the total number of duplicate.
+    Number of message replays detected while executing.
+    \item timeout events that have occurred.consecutive\_timeouts: The number of socket- timeout events that have been seen consecutively.
+    The number of level timeout events that happened for the current transactions.
 \end{itemize}
 
-At the end of each one-second sampling period, the engine compares the collected metrics against predefined operational thresholds to transition the system to the optimal execution state. The system defines three execution modes: Normal, Unstable, and High-Risk.
-
-\subsubsection{State Transition Logic}
-The engine transitions between execution modes based on network and security state indicators.
-
-\paragraph{High-Risk Escalation}
-The engine immediately escalates to High-Risk mode if any of the following conditions are met:
-\begin{itemize}
-    \item The rolling packet loss rate (RPLR) reaches or exceeds 20\%.
-    \item The cumulative authentication failure count (\texttt{auth\_fail\_count}) reaches 5 or more.
-    \item The cumulative replay detection count (\texttt{replay\_count}) reaches 3 or more.
-\end{itemize}
-
-\paragraph{Unstable Transition}
-The system transitions from Normal to Unstable mode if the network conditions degrade without meeting the High-Risk threshold:
-\begin{itemize}
-    \item The rolling packet loss rate exceeds 5\%.
-    \item The connection records three or more consecutive socket-level timeouts.
-\end{itemize}
-
-\paragraph{Normal Mode and Hysteresis}
-To prevent rapid, oscillatory state transitions under borderline conditions, the engine employs a hysteresis mechanism. The system will only downgrade to Normal mode after all monitored metrics remain consistently below their respective Unstable thresholds for a continuous window of 30 seconds.
-
-Upon any state transition, the server broadcasts an \texttt{MSG\_ENGINE\_STATE} control frame to all connected clients and updates the global variable \texttt{EngineState}. The configuration adjustments corresponding to each state are presented in Table~\ref{tab:adaptive_params}.
+Each 1 second sampling period, at the end of which the engine
+baselines and thresholds.Compares the metrics they have gathered with pre-determined operating baselines and thresholds.
+In the system, transition thresholds are used to switch the system to the optimal execution.
+state. It offers three modes of execution: Normal,It comprises three modes of execution: Normal, Unstable, and High-Risk.
 
 \begin{table*}[t]
-\caption{Adaptive Parameter Reconfiguration Matrix}
-\label{tab:adaptive_params}
+\caption{SYSTEM MODULE MAP}
+\label{tab:module_map_sec6}
+\begin{center}
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Module} & \textbf{Role} \\
+\hline
+The main files are \texttt{server.c}, \texttt{client\_handler.c}, & which are responsible for accepting connections to the server, as well as maintaining per-client threads, and for routing messages to the appropriate clients. \\
+\hline
+The file \texttt{room\_manager.c} contains functions for handling room management, the file \texttt{auth\_manager.c} contains functions & for user list broadcast and RSA-2048 public-key verification. \\
+\hline
+\texttt{gtk\_client.c} & GTK3 login dialog, chat window, directed messaging, priority selector, on-line-users panel \\
+\hline
+This is for the \texttt{client.c}, \texttt{input\_handler.c}, \texttt{display.c} & CLI client, parsing of the @recipient or @all command, and printing to the terminal. \\
+\hline
+SEED state machine, AES-256-CBC encrypt/decrypt, RSA-2048 sign/verify, & Double Ratchet state machine, AES-256-CBC encrypt/decrypt, RSA-2048 sign/verify, HKDF \\
+\hline
+As TLS 1.3 context setup, wrap/unwrap are done for all TCP I/O, so the adjust-once memory is reused in subsequent I/Os. & For all TCP I/O, TLS 1.3 context setup, wrap/unwrap, adjust-once memory is reused in subsequent I/Os. \\
+\hline
+This is \texttt{adaptive\_engine.c} and \texttt{metrics\_collector.c}, & which constitute the three-state engine, 1-second evaluation tick, and aggregation of metrics. \\
+\hline
+loops for sending packets & via Dual-path TCP+UDP, disk-based offline queue, priority queue for three-level priority. \\
+\hline
+The \texttt{intrusion.c} & access counters for failed authentications per IP, IP block/unblock and replay events are new features. \\
+\hline
+This file & implements socket helpers, DNS resolution, and a receiver thread for UDP sockets. \\
+\hline
+\end{tabular}
+\end{center}
+\end{table*}
+
+\subsubsection{1) State Transition Logic}
+The engine changes its state from one to another according to the logic it has defined.
+execution modes using network \& network security state indicators.
+
+\paragraph{a) HighRisk Escalation}
+The engine scales up to the next risk level as soon as it is reached.
+If any of the following conditions are, lates to High-Risk mode:
+met:
+\begin{itemize}
+    \item The rolling packet loss rate (RPLR) is 100\% or higher for at least 10\% of the time.Rolling packet loss rate (RPLR) is 100\% or more for 10\% or more of time.
+    20\%.
+    \item The number of authentication failures that have been recorded.The total number of authentication failures.
+    The number of authentication failures (auth\_fail\_count) is 5 or greater.
+    \item The amount of times the replay has been detected.Total detected replays.
+    The number of re-play (replay\_count) increases to 3 or more.
+\end{itemize}
+
+\paragraph{b) Unstable Transition}
+The system transitions from
+Switch the network to Normal to Unstable if network conditions deteriorate
+If the warning is not "High Risk":
+\begin{itemize}
+    \item There is a high level of rolling packet loss, >5\%.
+    \item This record of connection contains three or more socket-level timeouts.
+\end{itemize}
+
+\paragraph{c) Normal Mode and Hysteresis}
+To avoid fast, beep beep... repetition, the modes:To avoid fast repetition beep beep... the modes:
+Transitions between various cillatory states under borderlines, and
+The hysteresis mechanism is used in engine. The system will only
+After all monitored metrics are seen as "Normal", downgrade to "Normal".
+for at least three days in each of the four years has been consistently below their respective Unstable thresholds for a
+A 30-second uninterrupted time period.
+
+When the server changes state it sends out an
+Sends a control frame to all connected clients that the engine is in a particular state.
+Updates the worldwide variable \texttt{EngineState}. The config-
+Changes for each of the states are given
+in Table II.
+
+When network conditions are degraded, data transmission and reception from the same component is combined into smaller sizes.
+The newly added cryptographic chunk sizes and the new retry budgets sig-
+Proves to deliver much better delivery rates than lossy links.
+
+In High-Risk mode, some other defense mechanisms are
+enabled:
+\begin{itemize}
+    \item fixed size to ensure consistency.All message payloads are padded to a fixed size to ensure consistency --- Forced Padding.
+    the same-size uniform 4,096 bytes to prevent traffic analysis attacks.
+    hide length side-channels.
+\end{itemize}
+
+\begin{table*}[t]
+\caption{APRM is a new wind.APRM is a fresh wind.}
+\label{tab:aprm}
 \begin{center}
 \begin{tabular}{|l|c|c|c|}
 \hline
-\textbf{Parameter} & \textbf{Normal} & \textbf{Unstable} & \textbf{High-Risk} \\
+The parameter is unstable in high risk areas. & Normal & Unstable & High-Risk \\
 \hline
 Max Retries & 3 & 7 & 10 \\
-Retry Delay & 100\,ms & 200\,ms & 300\,ms \\
-Crypto Chunk Size & 4096\,bytes & 512\,bytes & 256\,bytes \\
-UDP Backup Path & Enabled & Enabled & Enabled \\
-Forced Padding & Disabled & Disabled & Enabled \\
-Randomized Timing Delay & Disabled & Disabled & Enabled \\
+\hline
+Retry Delay & 100 ms & 200 ms & 300 ms \\
+\hline
+bitSums (based on Crypto Chunk Size): & 4096 bytes & 512 bytes & 256 bytes \\
+\hline
+Description: & & & \\
+\hline
+Forced Padding = & Disabled & Disabled & = Enabled \\
+\hline
+It will be disabled if you don't use it on a regular basis.If you do not use it regularly, it will be disabled. & & & \\
+\hline
 DH Ratchet Frequency & 10 Messages & 10 Messages & Each Message \\
 \hline
 \end{tabular}
 \end{center}
 \end{table*}
 
-Under degraded network conditions, combining smaller cryptographic chunk sizes with increased retry budgets significantly enhances delivery success rates over lossy links. In High-Risk mode, additional defensive mechanisms are enabled:
 \begin{itemize}
-    \item \textbf{Forced Padding:} All message payloads are padded to a uniform size of 4,096 bytes to thwart traffic analysis and hide length side-channels.
-    \item \textbf{Randomized Timing Delay:} Retries are subject to randomized delays between 100\,ms and 500\,ms, complicating timing-based attacks.
-    \item \textbf{Aggressive DH Ratcheting:} A Diffie-Hellman ratchet step is executed on every message to achieve maximum forward secrecy and speed up post-compromise recovery.
+    \item Randomized Timing Delay: Retries are retried at random times that are delayed.
+    ing the task with delays of 100--500 ms makes them more difficult.
+    ing timing-based attacks.
+    \item A Diffie-Hellman ratchet is known as aggressive DH Ratcheting.
+    Every message will go through the process of step, which is executed in order to get the maximum.
+    Provide forward secrecy and enhance post-compromise recovery.
 \end{itemize}
 
-\subsection{Intrusion Detection System}
+\subsection{BIDS -- This is an Intrusion Detection System.BIDS -- Intrusion Detection System.}
 
-The server incorporates a lightweight, stateful Intrusion Detection System (IDS) to detect authentication brute-forcing and packet replay attacks. To defend against resource exhaustion and Denial-of-Service (DoS) attacks targeted at the tracking subsystem, the IDS maintains a statically allocated tracking table of size \texttt{MAX\_BLOCKED\_IPS}. Lookup operations in this table are optimized using a fast lookup strategy that minimizes per-packet processing overhead.
+The server is designed to be light, yet has a stateful Intrusion De-
+to prevent authentication brute forcing via the TELNET protocol, a web-based file upload tool, and a protection system (IDS) that detects attempts to brute force authentication.
+packet replay attacks. To protect from lack of any resources
+The tracking was the target of and Denial-of-Service (DoS) attacks.
+In contrast, with statically allocated tracking, the IDS has a fixed set of objects it tracks, such as a subsystem.
+A table with a maximum of \texttt{MAX\_BLOCKED\_IPS} elements. The following are lookup operations in this
+Each table in table is optimized with a quick lookup technique that results in a minimum number of operations.
+per-packet processing overhead.
 
-Each tracking record in the table stores:
+The following were stored in each tracking record in the tracking table:
 \begin{itemize}
-    \item The client IP address (stored as a string, maximum 48 characters).
-    \item An authentication failure counter.
-    \item A boolean block status flag.
-    \item A timestamp indicating when the IP block was instituted.
+    \item bytes) is a string of 48 bytes.The client IP address (stored as a string, maximum 48 bytes) is a string of up to 48 bytes.
+    characters).
+    \item A counter to count the number of times the authentication fails.
+    \item A flag that is either set to true or false to indicate the status of a block.
+    \item A time stamp that allows one to know when the IP block was created.
 \end{itemize}
 
-The IDS exposes two primary reporting interfaces: \texttt{ids\_record\_auth\_fail()} and \texttt{ids\_record\_replay()}. 
+This IDS reveals two major reporting
+interfaces: \texttt{ids\_record\_auth\_fail()} and
+\texttt{ids\_record\_replay()}.
 
-If an authentication attempt fails—such as when an invalid RSA signature is received or a client requests a username currently registered to another active session—the IDS increments the failure counter for that IP. Once this counter reaches 5, the following sequence occurs automatically:
+If an authentication attempt fails (for example, if an invalid
+If the answer to the last question is yes, then RSA signature is received, or a client requests a username cur-
+Currently registered to another active session—they increment the IDS
+The error counter for the given IP. When this counter gets to 5, the
+following sequence occurs automatically:
 \begin{enumerate}
-    \item The IP address is added to the blocked IP list.
-    \item The current epoch time is recorded as the block timestamp.
-    \item The engine calls \texttt{metrics\_record\_auth\_fail()}, triggering immediate escalation of the adaptive state machine to High-Risk mode.
+    \item IP address is placed on the blocked list of IP addresses.
+    The block time is recorded as the current epoch time in red.The current epoch time is recorded in red as
+    \item The block timestamp.
+    \item Records \texttt{metrics\_record\_auth\_fail()},
+    inducing a rapid up-regulation of adaptive state
+    Press the button to change from machine to High-Risk mode.
 \end{enumerate}
 
-Replay attacks are handled analogously. If an incoming message ID matches a record already present in the deduplication ring buffer, the message is classified as a replay attempt. The system immediately invokes \texttt{metrics\_record\_replay()} to transition the adaptive engine to High-Risk mode.
+Replay attacks are dealt with in a similar fashion. If an incom-
+If a record is already in the database, then the ing message ID is the same as that of the record.
+If the message is classified, then the deduplication ring buffer is used.
+As an attempt of a replay. System automatically signals for when to invoke the system
+Write the adaptive to \texttt{metrics\_record\_replay()} to switch to
+Select engine to High-Risk mode.
 
-To enforce these security decisions, the server calls \texttt{ids\_is\_blocked(ip)} during the connection \texttt{accept()} loop. If the IP address is blocked, the server immediately drops the connection before initiating the TLS 1.3 handshake, saving CPU cycles. 
+The security decisions are enforced by the server calling
+The server is using the idp which is blocked, during connect \texttt{accept()}
+loop. When blocked this means that the server immediately drops the IP address and that's that.
+the connection prior to starting TLS 1.3 handshake, saving,
+CPU cycles.
 
-To avoid the overhead of dedicated background timer threads, block expiration is managed passively. The function \texttt{ids\_expire\_blocks()} is executed in the server's main loop after processing each incoming message. If the elapsed time since an IP's block timestamp exceeds 300 seconds (5 minutes), the block flag is cleared and the IP tracking record is reset. 
+To not have to dedicate a background timer for each item that you want to track.
+In the case of threads, the expiration is done as an afterthought. The function
+The function \texttt{ids\_expire\_blocks()} is called in the main call of the server.
+Loop after each one of the messages received.If the elapsed
+time since an IP’s block timestamp exceeds 300 seconds (5
+minutes), the block flag is cleared and the IP tracking record
+is reset.
 
-All blocking and unblocking actions are recorded in a dedicated IDS log file using the following format:
+All blocking and unblocking actions are recorded in a
+dedicated IDS log file using the following format:
 \begin{verbatim}
-[IDS 14:23:01] BLOCK 192.168.1.50
-[IDS 14:28:01] UNBLOCK 192.168.1.50
+[IDS 2026-06-10 14:23:01] BLOCK from 192.168.1.50
+[IDS 2026-06-10 14:28:01] UNBLOCK 192.168.1.50
 \end{verbatim}
 
 % ============================================================
 %  SECTION VII — MULTIPATH TRANSPORT AND OFFLINE QUEUE  (Member 3)
 % ============================================================
-\section{Multipath Transport and Offline Message Queue}
+\section{Transferring message to multiple places and storing it offline. QUEUE}
 \label{sec:multipath_transport}
 
-\subsection{Dual-Path Delivery and Deduplication}
+\subsection{Scratch and Deduplication}
 
-To enhance transmission reliability under unstable and adversarial network conditions, the system implements a simultaneous dual-transport delivery strategy. Every outgoing message is transmitted over two separate channels: a primary TCP socket wrapped with TLS 1.3 encryption, and a secondary UDP datagram channel for redundant path delivery.
+To improve the transmission reliability in unstable and
+When the system is in adversarial network conditions, it adopts a si-Co-transport dual delivery approach. Every outgoing
+The message is sent by two different channels: primary
+Two TCPSocket objects, one of which is encrypted with TLS 1.3, and a second
+The redundant path delivery UDP datagram channel.
 
-The client transmission loop adheres to the retry budget (\texttt{max\_retries}) configured by the adaptive engine. During transmission, the sending thread writes the encrypted payload to the active TLS socket and simultaneously sends an identical copy as a UDP datagram. When operating in High-Risk mode, the adaptive engine inserts a random delay of 100\,ms to 500\,ms between retry attempts to complicate traffic timing analysis. Under Normal and Unstable modes, a fixed retry interval is maintained. Messages designated with Critical priority automatically receive two additional retry attempts beyond the baseline limit to maximize delivery probability.
+The retry budget is adhered to for the client transmission loop.
+(configured by the adaptive engine) is the maximum number of times the adaptive engine will attempt to run the program. During
+The string being sent is encrypted by the "transmission", the sending thread.
+To the already active TLS socket and at the same time sends the same
+Copy to a UDP datagram. With the High Risk setting,
+the adaptive engine adds a random time delay of 100ms - 500ms
+The higher the number, the more difficult it will be to analyze traffic timing with the re-try.
+Of course, in both Normal and Unstable modes, the same retry interval is used.
+maintained. Messages with Critical priority automatically have it routed to the top of the queue.
+Be lucky enough to be granted two more attempts per retry, in addition to the
+baseline limit with max delivery probability.
 
-Because frames are transmitted over both channels, the receiver is expected to receive duplicate packets. To prevent duplicate payloads from reaching the application or user interface layers, the receiving pipeline utilizes a thread-safe deduplication mechanism. The receiver maintains a circular deduplication buffer declared as:
+Since both channels are used for transmitting frames,
+receiver will expect to get duplicate packets. To prevent
+Prevent the sending of duplicate payloads to the application or user.
+The receiving pipeline takes advantage of the interface layers, which use a thread-safe
+deduplication mechanism. The receiver holds a circle in his hands.
+deduplication buffer defined as:
 \begin{verbatim}
 dedup_buf[1024][16]
 \end{verbatim}
-This ring buffer stores up to 1,000 message identifiers (\texttt{msg\_id}). For every incoming frame, the receiver invokes \texttt{dedup\_check()} to perform a lookup:
+This ring buffer can hold up to 1000 message ID's.
+(msg\_id). The receiver calls for the processing of the next frame
+Use \texttt{dedup\_check()} to do a lookup:
+If the message ID is included in the active deduplication, then the event log will display the following message:
+It is these issues that account for the fact that window is silently discarded.
+If the ID is not identified, its receiver appends the ID using
+\texttt{ring\_buf\_ptr)} to point at the next element in the ring buffer.\texttt{dedup\_add()}, increments ring buffer pointer (modulo
+Sends the payload to be decrypted (1024) and forwards.
+processing.
+
+Each of the deduplication operations is secured by a
+Prestart locking with \texttt{pthread\_mutex\_t} to make sure that it is thread safe, across
+concurrent reception paths. Look up and Insert routines
+Do not have to be deduplicated at the layer to which they're connected, as they need to operate in constant time.
+This is a measure to prevent from being a performance bottleneck.
+
+\subsection{Priority Queue with ArrayB. Client-Side Priority Queue}
+
+In the client transmission pipeline a three level prior-
+A programmatic scheduling mechanism to control traffic going out of the network. Outgo-
+ing messages will be prioritised as one of three priority levels:
+First-Out (FIFO) order.Normal (Priority 0): Processed in the normal order of First-In, First-Out (FIFO).
+First-Out (FIFO) order.
 \begin{itemize}
-    \item If the message ID is present in the active deduplication window, the frame is silently discarded.
-    \item If the ID is not found, the receiver appends it using \texttt{dedup\_add()}, updates the ring buffer pointer (modulo 1024), and forwards the payload for decryption and processing.
+    \item Urgent (Priority 1): queued in front of Normal traffic
+    To reduce the propagation delay.
+    \item This category is reserved for the most important tasks, and will be scheduled first.
+    Increased priority and queued at the front of the queue.
 \end{itemize}
-All deduplication operations are protected by a \texttt{pthread\_mutex\_t} lock to ensure thread safety across concurrent reception paths. The lookup and insertion routines operate in constant time, preventing the deduplication layer from becoming a performance bottleneck.
+On queuing a Critical message, the client calls
+Wait for trans- to be signalled/woken up by \texttt{pthread\_cond\_signal()}.
+If it's idle or blocked, it will be replaced by mission thread. Besides high-,
+The two queue scheduling policies are: priority queue and critical messages.
+Transmission attempts in multipath delivery loop (extra): The number of transmission attempts that have been made by the network in the multipath delivery loop.
+to help in propagation in degraded areas. Priority des-
+ignations are carried across network path through the
+\texttt{MsgHeader.priority} field.
 
-\subsection{Client-Side Priority Queue}
+\subsection{A persistent Offline Message Queue.C. Persistent Offline Message Queue:}
 
-The client transmission pipeline employs a three-level priority scheduling mechanism to manage outgoing traffic. Outgoing messages are categorized into one of three priority levels:
-\begin{itemize}
-    \item \textbf{Normal (Priority 0):} Processed in standard First-In, First-Out (FIFO) order.
-    \item \textbf{Urgent (Priority 1):} Enqueued ahead of Normal traffic to minimize propagation delay.
-    \item \textbf{Critical (Priority 2):} Assigned the highest scheduling priority and placed at the head of the transmission queue.
-\end{itemize}
-
-Upon enqueuing a Critical message, the client invokes \texttt{pthread\_cond\_signal()} to immediately wake the transmission thread if it is idle or blocked. In addition to high-priority queue scheduling, Critical messages are granted two extra transmission attempts in the multipath delivery loop to assist propagation in degraded environments. Priority designations are preserved across the network path via the \texttt{MsgHeader.priority} field.
-
-\subsection{Persistent Offline Message Queue}
-
-For asynchronous delivery to disconnected recipients, the server implements a persistent, disk-based offline queuing mechanism. When the server client handler fails to route a message to an offline user, the message is serialized and written to the user's queue directory at:
+In the case of disconnected recipients, then it is an asynchronous delivery.If it's delivered to recipients who are not connected, it's asynchronous delivery.
+The server has an offline queue implemented in a persistent fashion on disk.
+mechanism. When the server client handler does not route a
+If the message is to be sent to an offline user, then the message is serialized and
+Sent to the user's queue directory at:
 \begin{verbatim}
 data/offline_queue/<username>/
 \end{verbatim}
-
-Prior to any filesystem interaction, the server validates the username against a strict regular expression:
+Before using any filesystem, the server checks to validate the
+An extremely strict regular expression against which username is matched.
 \begin{verbatim}
 [a-zA-Z0-9_-]
 \end{verbatim}
-This validation prevents directory traversal attacks (such as injecting path separators like \texttt{/..}). The queue directories and message files are created with restricted permissions—mode \texttt{0700} for directories and \texttt{0600} for files—enforcing operating system-level access control.
+It helps to prevent directory traversal attacks (for example, )
+Using path separators e.g. /..). The queues are organized in the following way:
+The message files are created with limited permissions -- mode
+0700 is for directories and 0600 is for files---enforce operating.
+system-level access control.
 
-Each message is saved as an individual file named using the pattern:
+When messages are saved, they are saved as individual files with names of the messages.
+pattern:
 \begin{verbatim}
 <timestamp_ms>_<msg_id_hex>
 \end{verbatim}
-This naming convention allows the server to read the queue files in lexicographical order upon client reconnection, preserving the chronological sequence of the messages.
+This naming is required for the server to be able to read the queue.
+When a client reconnects, it will get the files in lexicographical order, pre-
+Providing a logical order of the messages.
 
-A critical design choice is storing offline messages in plaintext rather than ciphertext on the server. Because the recipient's future ratchet state cannot be predicted at queuing time, encrypting the message with the current ratchet state would lead to synchronization failures (ratchet desynchronization) upon reconnection, rendering the message undecryptable. Instead, messages are secured on-disk via OS-level access control permissions and encrypted using the recipient's fresh ratchet state established upon reconnection.
+One of the important design decisions was to save offline messages in the following manner:
+Using plaintext not ciphertext on the server. Because the
+recipient's next state at queuing time is not known
+time, encrypting with the current state of the ratchet.
+would cause synchronisation problems (ratchet desynchronisation)
+When reconnected again (after a couple of seconds), the message turns into gibberish (see above).
+Messages are instead secured on disk by using access to the OS level.
+Control permissions and encrypted with the recipient's new
+ratchet state gives state that is set on re-connection.
 
-Replayed offline messages are transmitted to the client as standard \texttt{MSG\_CHAT} frames, with the \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} flag set in the header. The client UI uses this flag to display a \texttt{[queued]} indicator, distinguishing replayed messages from live traffic. To prevent storage exhaustion, offline queues are capped at 500 messages per user (\texttt{OFFLINE\_QUEUE\_MAX}); subsequent incoming messages for a full queue are discarded.
+When messages are replayed from the offline file they are sent to the
+Each client delivers as normal \texttt{MSG\_CHAT} frames, the
+The header has the \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} flag set.
+The flag is used in the client UI to show a [queued] indicator,
+The ability to differentiate replayed traffic from live traffic. To prevent
+By default, offline queues are limited to 500 messages, but this limit can be changed.The limit for offline queues is 500 messages by default, but this can be altered.
+While subsequent incoming messages can be put on the queue, they are limited to per user (\texttt{OFFLINE\_QUEUE\_MAX}).
+If a message is waiting in FIFO queue, then messages sent to the FIFO queue are discarded.
 
 % ============================================================
 %  SECTION VIII — EVALUATION  (Member 3)
