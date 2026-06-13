@@ -64,7 +64,7 @@ A multi-client end-to-end encrypted chat system is described which implements se
 \begin{enumerate}
     \item Three-state adaptive engine based on smoothed packet-loss rate, per-session authentication failure counter and a cumulative replay counter.
     \item Double Ratchet at the application level which includes per-message forward secrecy, and the ability to recover quickly if session-keys are compromised.
-    \item Resilient delivery of messages over simultaneous dual-path delivery (TCP & UDP) with 128-bit message-ID deduplication.
+    \item Resilient delivery of messages over simultaneous dual-path delivery (TCP \& UDP) with 128-bit message-ID deduplication.
     \item Lightweight, statically allocated IDS that takes per-IP security events directly into the adaptive state machine, combining threat detection and cryptographic response in one feedback loop.
 \end{enumerate}
 
@@ -391,7 +391,7 @@ If a message is sent to someone who is not on-line, the server delivers the mess
 \begin{verbatim}
 data/offline_queue/<username>/
 \end{verbatim}
-The server runs a tight regular expression (\texttt{[a-zA-Z0-9\-]}) to check the username before accessing any filesystem, to avoid directory traversal attacks involving embedded path separators like \texttt{/../}. Directories are opened with the permission of 0700 and message files with the permission of 0600, thus enforcing access control at the OS-level. Each message goes into a file named \texttt{<timestamp\_ms>\<msg\_id\_hex>} and the queue is read in lexicographical order on reconnection, thus maintaining the chronological ordering of the messages.
+The server runs a tight regular expression (\texttt{[a-zA-Z0-9\-]}) to check the username before accessing any filesystem, to avoid directory traversal attacks involving embedded path separators like \texttt{/../}. Directories are opened with the permission of 0700 and message files with the permission of 0600, thus enforcing access control at the OS-level. Each message goes into a file named \texttt{<timestamp\_ms>\_<msg\_id\_hex>} and the queue is read in lexicographical order on reconnection, thus maintaining the chronological ordering of the messages.
 
 It was decided that the messages will not be ciphertexts on the server but will be stored as plain text. If the pre-encrypted messages were encrypted with the current ratchet state of the recipient, then the recipient's ratchet state at the time of the queuing would not be known until reconnection, which would lead to problems with synchronization and make the queued messages unreadable on reconnection. Messages are instead protected at rest by OS-level access control permissions, and re-encrypted under the recipient's live ratchet state at the time of delivery. These frames are flagged as \texttt{MSG\_FLAG\_IS\_OFFLINE\_REPLAY} and replayed frames are distinguished from live frames on the client UI by displaying an indicator that the frame has been queued for replay. There is an offline queue of maximum \texttt{OFFLINE\_QUEUE\_MAX}~=~500 messages per user, and once this limit is reached the extra messages are dropped.
 
